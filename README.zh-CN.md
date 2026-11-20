@@ -4,7 +4,9 @@
 
 Codex 桌面端的本地 Git 工作台。查看差异、暂存更改，并管理提交、分支和工作树。
 
-[快速开始](#快速开始) · [功能](#功能) · [更新日志](CHANGELOG.md)
+[快速开始](#快速开始) · [功能](#功能) · [更新日志](CHANGELOG.md) · [反馈问题](https://github.com/KissFeng/codex-git-workbench/issues) · [参与贡献](CONTRIBUTING.md#参与贡献)
+
+欢迎贡献文档、翻译、兼容性反馈和代码 PR。小修可以直接提 PR，较大的改动请先开 Issue，一起确认范围。
 
 ![Codex 桌面端示意图，左侧是项目列表，中间是聊天，右侧是 Git 工作台](docs/workbench-codex.zh-CN.png)
 
@@ -21,7 +23,15 @@ codex plugin marketplace add KissFeng/codex-git-workbench --ref v0.8.1
 codex plugin add codex-git-workbench@kissfeng-git-tools
 ```
 
-在面板选择器中打开 **Git Workbench**。如果当前 Codex 聊天关联了 Git 工作目录，工作台会自动选中对应的工作副本。也可以从仓库选择器查找已保存的项目和工作树，或打开其他工作副本。如果面板或新版本未出现，重新打开 Codex。
+在面板选择器中打开 **Git Workbench**。如果当前 Codex 聊天关联了 Git 工作目录，工作台会自动选中对应的工作副本。也可以从仓库选择器查找已保存的项目和工作树，或打开其他工作副本。
+
+### 安装排障
+
+- **找不到 Git Workbench 面板。** 运行 `codex plugin list --marketplace kissfeng-git-tools` 检查插件是否已安装，然后完全退出并重新打开 Codex。请使用支持本地 MCP Apps 的 Codex 桌面端。
+- **Codex 找不到 Node.js 或 Git。** 运行 `node --version` 和 `git --version`。如果命令找不到，或插件仍然无法启动，请确认可执行文件所在目录在桌面端能读到的 PATH 中，再重启 Codex。
+- **升级后仍显示旧版本。** 安装命令固定了 Git tag。切换版本时，在添加插件市场的命令中填写目标 tag，再运行插件安装命令。如果 Codex 提示市场已配置，先执行 `codex plugin marketplace remove kissfeng-git-tools`。安装后完全退出并重新打开 Codex。
+
+桌面端开发环境为 macOS。CI 在 macOS 和 Linux 上运行 Node.js 和 Git 测试。欢迎提交 Windows 和 Linux 的[桌面端兼容性反馈](https://github.com/KissFeng/codex-git-workbench/issues)，请附上系统、Codex 版本、插件 tag 和复现步骤。
 
 ## 功能
 

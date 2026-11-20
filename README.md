@@ -4,7 +4,9 @@
 
 A local Git workbench for Codex desktop. Review diffs, stage changes, and manage commits, branches, and worktrees.
 
-[Quick start](#quick-start) · [Features](#features) · [Changelog](CHANGELOG.md)
+[Quick start](#quick-start) · [Features](#features) · [Changelog](CHANGELOG.md) · [Report an issue](https://github.com/KissFeng/codex-git-workbench/issues) · [Contribute](CONTRIBUTING.md)
+
+Docs, translations, compatibility reports, and code PRs are welcome. Small fixes can go straight to a PR. For larger changes, open an issue so we can agree on the scope first.
 
 ![Codex desktop demo with projects on the left, a chat in the center, and Git Workbench docked on the right](docs/workbench-codex.en.png)
 
@@ -21,7 +23,15 @@ codex plugin marketplace add KissFeng/codex-git-workbench --ref v0.8.1
 codex plugin add codex-git-workbench@kissfeng-git-tools
 ```
 
-Open **Git Workbench** from the panel picker. When Codex provides a chat with a Git working directory, the workbench selects that checkout. You can look up saved projects and worktrees or open another checkout from the repository picker. Reopen Codex if the panel or the updated version does not appear.
+Open **Git Workbench** from the panel picker. When Codex provides a chat with a Git working directory, the workbench selects that checkout. You can look up saved projects and worktrees or open another checkout from the repository picker.
+
+### Installation troubleshooting
+
+- **Git Workbench is missing.** Run `codex plugin list --marketplace kissfeng-git-tools` to check that the plugin is installed, then fully quit and reopen Codex. Use a Codex desktop version with local MCP Apps support.
+- **Codex cannot find Node.js or Git.** Run `node --version` and `git --version`. If either command is missing or the plugin still fails to start, make sure the folder containing the executable is on the PATH available to the desktop app, then reopen Codex.
+- **The old version still appears.** The install command pins a Git tag. To switch versions, use the desired tag in the marketplace command and run the plugin install command again. If Codex reports that the marketplace is already configured, run `codex plugin marketplace remove kissfeng-git-tools` first. Fully quit and reopen Codex after installing.
+
+The desktop development environment is macOS. CI runs Node.js and Git tests on macOS and Linux. [Desktop compatibility reports](https://github.com/KissFeng/codex-git-workbench/issues) for Windows and Linux are welcome. Include your OS, Codex version, plugin tag, and steps to reproduce.
 
 ## Features
 
