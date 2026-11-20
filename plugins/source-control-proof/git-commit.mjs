@@ -1,6 +1,7 @@
+import { constants } from 'node:fs';
 import { copyFile, lstat, mkdtemp, open, rename, rm, unlink } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
-import { getStatus, git, runGitCommand } from './git-status.mjs';
+import { dirname, join, resolve } from 'node:path';
+import { checkoutRoot, getStatus, git, runGitCommand } from './git-status.mjs';
 import { withGitWrite } from './git-write.mjs';
 
 const commitActions = ['commit', 'commitAll', 'amend', 'undoCommit', 'commitEmpty'];
@@ -73,10 +74,39 @@ async function commitAll(root, args, options) {
   }
 }
 
-export async function gitCommit({ repoPath, action, message, signed, noVerify, confirmed }) {
+export async function gitCommitTemplate({ repoPath }) {
+  const root = await checkoutRoot(repoPath);
+  let configured;
+  try {
+    configured = (await git(root, 'config', '--path', '--get', 'commit.template')).replace(endOfLine, '');
+  } catch (error) {
+    if (error.code === 1) return { template: null };
+    throw error;
+  }
+  if (!configured) return { template: null };
+  const file = await open(resolve(root, configured), constants.O_RDONLY | constants.O_NONBLOCK);
+  try {
+    const info = await file.stat();
+    if (!info.isFile()) throw new Error('The commit template must be a regular file.');
+    const maxSize = 64 * 1024;
+    const bytes = Buffer.alloc(maxSize + 1);
+    const { bytesRead } = await file.read(bytes, 0, bytes.length, 0);
+    if (info.size > maxSize || bytesRead > maxSize) throw new Error('The commit template exceeds 64 KiB.');
+    try {
+      return { template: new TextDecoder('utf-8', { fatal: true }).decode(bytes.subarray(0, bytesRead)) };
+    } catch {
+      throw new Error('The commit template must be UTF-8 text.');
+    }
+  } finally {
+    await file.close();
+  }
+}
+
+export async function gitCommit({ repoPath, action, message, signed, signoff, noVerify, all, confirmed }) {
   if (typeof repoPath !== 'string' || !commitActions.includes(action)
     || (message !== undefined && (typeof message !== 'string' || message.includes('\0')))
-    || (signed !== undefined && typeof signed !== 'boolean') || (noVerify !== undefined && typeof noVerify !== 'boolean')) {
+    || [signed, signoff, noVerify, all].some(option => option !== undefined && typeof option !== 'boolean')
+    || (all && action !== 'amend')) {
     throw new Error('Invalid commit request.');
   }
   if (['amend', 'undoCommit'].includes(action) && confirmed !== true) throw new Error('Confirm this commit action before continuing.');
@@ -85,6 +115,7 @@ export async function gitCommit({ repoPath, action, message, signed, noVerify, c
   if (action === 'amend') args.push('--amend');
   if (action === 'commitEmpty') args.push('--only', '--allow-empty');
   if (signed !== undefined) args.push(signed ? '--gpg-sign' : '--no-gpg-sign');
+  if (signoff) args.push('--signoff');
   if (noVerify) args.push('--no-verify');
   if (message?.trim()) args.push('--file=-');
   else if (action === 'amend') args.push('--no-edit');
@@ -95,7 +126,7 @@ export async function gitCommit({ repoPath, action, message, signed, noVerify, c
     if (status.conflicts.length) throw new Error('Resolve conflicts before committing.');
     const options = { input: message, timeout: 120000 };
     try {
-      if (action === 'commitAll') await commitAll(root, args, options);
+      if (action === 'commitAll' || all) await commitAll(root, args, options);
       else await runGitCommand(root, args, options);
     } catch (error) {
       const currentHead = await git(root, 'rev-parse', '--verify', 'HEAD').then(stdout => stdout.trim(), () => null);

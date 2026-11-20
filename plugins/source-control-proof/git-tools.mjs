@@ -12,7 +12,7 @@ const commit = () => import('./git-commit.mjs');
 
 const operationActions = [
   'init', 'clone', 'createBranch', 'switchBranch', 'checkoutDetached', 'renameBranch', 'deleteBranch',
-  'createTag', 'deleteTag', 'deleteRemoteBranch', 'deleteRemoteTag', 'fetch', 'fetchRef', 'pushRef', 'pushTags', 'pull', 'pullMerge', 'pullRebase', 'push', 'publish', 'sync',
+  'createTag', 'deleteTag', 'deleteRemoteBranch', 'deleteRemoteTag', 'fetch', 'fetchRef', 'pushRef', 'pushTags', 'pull', 'pullMerge', 'pullRebase', 'push', 'publish', 'sync', 'syncRebase',
   'forcePush', 'addRemote', 'removeRemote', 'merge', 'rebase', 'cherryPick', 'mergeContinue',
   'rebaseContinue', 'cherryPickContinue', 'mergeAbort', 'rebaseAbort', 'cherryPickAbort',
   'stashPush', 'stashApply', 'stashPop', 'stashDrop', 'stashDropAll', 'createWorktree', 'removeWorktree',
@@ -34,16 +34,17 @@ const definitions = [
     action: choices('stage', 'unstage', 'discard', 'ignore', 'rename', 'delete'), group,
     path: string, newPath: string, confirmed: boolean, expectedPaths: strings,
   }, ['action'], true],
+  ['git_commit_template', 'Read the configured commit template', commit, 'gitCommitTemplate', {}],
   ['git_commit', 'Create, amend or undo a commit', commit, 'gitCommit', {
     action: choices('commit', 'commitAll', 'amend', 'undoCommit', 'commitEmpty'),
-    message: string, signed: boolean, noVerify: boolean, confirmed: boolean,
+    message: string, signed: boolean, signoff: boolean, noVerify: boolean, all: boolean, confirmed: boolean,
   }, ['action'], true],
   ['git_references', 'Read branches, tags, remotes, stashes and worktrees', operations, 'gitReferences', {}],
   ['git_operation', 'Run a selected Git operation', operations, 'gitOperation', {
     action: choices(...operationActions), name: string, startPoint: string, checkout: boolean,
     newName: string, force: boolean, ref: string, message: string, remote: string, branch: string,
     prune: boolean, confirmed: boolean, expected: string, url: string, includeUntracked: boolean,
-    recursive: boolean, kind: choices('branch', 'tag'), target: string,
+    recursive: boolean, followTags: boolean, kind: choices('branch', 'tag'), target: string,
     staged: boolean, restoreIndex: boolean, expectedStashes: strings, destination: string, newBranch: string, open: boolean,
     path: string, content: string, choice: choices('ours', 'theirs', 'base', 'current', 'delete', 'edit'),
   }, ['action'], true, true],

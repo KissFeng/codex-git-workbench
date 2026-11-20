@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.0
+
+- Add Git sign-off trailers, all-file amend and restoring the configured commit template.
+- Add explicit rebase sync and pushing reachable annotated tags with a branch.
+
 ## 0.6.0-preview.1
 
 - Add the Git Workbench panel with repository and worktree selection, compact file and tree views, split Diff, commit controls and an interactive commit graph.

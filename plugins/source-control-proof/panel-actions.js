@@ -108,7 +108,7 @@ const actionNames = {
   deleteRemoteBranch: 'Delete remote branch', deleteRemoteTag: 'Delete remote tag',
   fetchRef: 'Fetch branch or tag', pushRef: 'Push branch or tag', pushTags: 'Push all tags',
   fetch: 'Fetch', pull: 'Pull (fast-forward)', pullMerge: 'Pull and merge', pullRebase: 'Pull and rebase',
-  push: 'Push', publish: 'Publish branch', sync: 'Sync', forcePush: 'Force-push with lease',
+  push: 'Push', publish: 'Publish branch', sync: 'Sync', syncRebase: 'Sync after rebase', forcePush: 'Force-push with lease',
   addRemote: 'Add remote', removeRemote: 'Remove remote', merge: 'Merge', rebase: 'Rebase',
   cherryPick: 'Cherry-pick', mergeContinue: 'Continue merge', rebaseContinue: 'Continue rebase',
   cherryPickContinue: 'Continue cherry-pick', mergeAbort: 'Abort merge', rebaseAbort: 'Abort rebase',
@@ -118,7 +118,7 @@ const actionNames = {
 };
 
 const confirmActions = new Set([
-  'init', 'clone', 'deleteBranch', 'deleteTag', 'deleteRemoteBranch', 'deleteRemoteTag', 'push', 'pushRef', 'pushTags', 'publish', 'sync', 'forcePush', 'removeRemote',
+  'init', 'clone', 'deleteBranch', 'deleteTag', 'deleteRemoteBranch', 'deleteRemoteTag', 'push', 'pushRef', 'pushTags', 'publish', 'sync', 'syncRebase', 'forcePush', 'removeRemote',
   'rebase', 'mergeAbort', 'rebaseAbort', 'cherryPickAbort', 'stashDrop', 'stashDropAll', 'createWorktree',
   'removeWorktree', 'moveWorktreeChanges',
 ]);
@@ -140,16 +140,43 @@ function showCommitOptions() {
     { action: 'commitEmpty', label: 'Create empty commit' },
     { action: 'undoCommit', label: 'Undo last commit' },
   ];
-  commandList('Commit options', selected.map(({ action, label }) => ({
+  const options = selected.map(({ action, label }) => ({
     label,
     disabled: !state.status || !!workbench.busy,
     run: () => actionForm(label, action === 'undoCommit' ? [] : [
       field('message', 'Commit message', { value: el('commit-message').value, optional: action === 'amend', multiline: true }),
-      field('signed', 'Sign commit', { checkbox: true }),
+      field('signed', 'Cryptographically sign commit', { checkbox: true }),
+      field('signoff', 'Append Signed-off-by trailer', { checkbox: true }),
+      ...(action === 'amend' ? [field('all', 'Stage all working-copy changes', { checkbox: true })] : []),
       field('noVerify', 'Skip commit hooks', { checkbox: true }),
     ], (values, confirmed) => performAction('git_commit', { action, ...values, ...(confirmed ? { confirmed } : {}) }, label),
     { confirmation: ['amend', 'undoCommit', 'commitAll'].includes(action) ? label + ' on ' + state.status.branch : '' }),
-  })));
+  }));
+  options.push({ label: 'Restore commit template…', disabled: !state.checkout, run: restoreCommitTemplate });
+  commandList('Commit options', options);
+}
+
+async function restoreCommitTemplate() {
+  const epoch = state.epoch;
+  const draft = el('commit-message').value;
+  try {
+    const result = await callTool('git_commit_template', { repoPath: state.checkout });
+    if (epoch !== state.epoch) return;
+    if (result.template === null) {
+      el('staging-message').textContent = 'No commit template is configured.';
+      return;
+    }
+    const apply = () => {
+      el('commit-message').value = result.template;
+      updateCommitButton();
+      el('commit-message').focus();
+    };
+    if (draft || el('commit-message').value) {
+      actionForm('Restore commit template', [], apply, { confirmation: 'Replace the current commit draft with the configured template.' });
+    } else apply();
+  } catch (error) {
+    if (epoch === state.epoch) showError(error.message);
+  }
 }
 
 async function chooseBranch() {
@@ -215,7 +242,9 @@ async function showCommands() {
     const add = (action, fields = [], preset = {}, disabled = false) => commands.push({
       label: actionNames[action], disabled, run: () => runCommand(action, preset, fields),
     });
-    const addRemoteAction = action => add(action, [remote(), branch()], {}, !remoteNames.length);
+    const addRemoteAction = action => add(action, [remote(), branch(),
+      ...(['push', 'publish'].includes(action) ? [field('followTags', 'Include reachable annotated tags', { checkbox: true })] : []),
+    ], {}, !remoteNames.length);
     commands.push({ label: 'Switch branch…', run: chooseBranch }, { label: 'Compare changes…', run: compareForm });
     add('createBranch', [name('Branch name'), field('startPoint', 'Start from', { optional: true }), field('checkout', 'Switch to this branch', { checkbox: true, value: true })]);
     add('checkoutDetached', [revision()]);
@@ -226,7 +255,7 @@ async function showCommands() {
     add('addRemote', [name('Remote name'), field('url', 'Remote URL')]);
     add('removeRemote', [name('Remote', remoteNames)], {}, !remoteNames.length);
     add('fetch', [remote(), field('prune', 'Prune stale references', { checkbox: true })], {}, !remoteNames.length);
-    for (const action of ['pull', 'pullMerge', 'pullRebase', 'push', 'publish', 'sync']) addRemoteAction(action);
+    for (const action of ['pull', 'pullMerge', 'pullRebase', 'push', 'publish', 'sync', 'syncRebase']) addRemoteAction(action);
     const kinds = [{ value: 'branch', label: 'Branch' }, { value: 'tag', label: 'Tag' }];
     add('fetchRef', [remote(false), field('kind', 'Reference type', { choices: kinds }), name('Remote reference name')], {}, !remoteNames.length);
     add('pushRef', [remote(false), field('ref', 'Local reference', { choices: [...refs.branches, ...refs.tags].map(item => item.ref) })], {}, !remoteNames.length || (!branches.length && !localTags.length));

@@ -251,9 +251,10 @@ function pushRefspec(root, remote, refspec, options = []) {
   return execute(root, ['push', '--no-mirror', '--no-follow-tags', '--recurse-submodules=no', ...options, '--', remote, refspec], true, config);
 }
 
-function push(root, action, { remote, branch }, expected) {
+function push(root, action, { remote, branch }, { expected, followTags }) {
   const ref = localPrefix + branch;
   const options = action === 'publish' ? ['--set-upstream'] : action === 'forcePush' ? [leaseOption(ref, expected)] : [];
+  if (followTags === true) options.push('--follow-tags');
   return pushRefspec(root, remote, 'HEAD:' + ref, options);
 }
 
@@ -515,12 +516,14 @@ export async function gitOperation(args) {
       case 'push':
       case 'forcePush':
       case 'publish':
-      case 'sync': {
+      case 'sync':
+      case 'syncRebase': {
         confirm(args);
         if (action === 'forcePush' && (!args.remote || !args.branch)) throw new Error('Choose the exact remote branch to update.');
         const origin = await originFor(root, args, action === 'publish');
-        const pulled = action === 'sync' ? await pull(root, 'pull', origin) : {};
-        const pushed = await push(root, action, origin, args.expected);
+        const syncMode = { sync: 'pull', syncRebase: 'pullRebase' }[action];
+        const pulled = syncMode ? await pull(root, syncMode, origin) : {};
+        const pushed = await push(root, action, origin, args);
         const message = diagnostics(pulled.message, pushed.message);
         return message ? { message } : {};
       }

@@ -384,3 +384,32 @@ test('refuses unsafe configured remote helpers when fetching', async t => {
   await assert.rejects(run('fetch', { remote: 'unsafe' }), /transport/i);
   assert.equal(git(repoPath, 'status', '--porcelain'), '');
 });
+
+test('explicit rebase sync rebases diverged local work and then pushes the result', async t => {
+  const { repoPath, peer, remote, run } = await remoteFixture(t);
+  const local = await commit(repoPath, 'local content\n', 'local.txt');
+  const upstream = await commit(peer, 'remote content\n', 'remote.txt');
+  git(peer, 'push');
+  await assert.rejects(run('syncRebase'), /confirmation/i);
+  await run('syncRebase', { confirmed: true });
+  const head = git(repoPath, 'rev-parse', 'HEAD');
+  assert.notEqual(head, local);
+  assert.equal(git(repoPath, 'rev-parse', 'HEAD^'), upstream);
+  assert.equal(remoteTip(remote), head);
+});
+
+test('push with followed tags publishes reachable annotated tags and the selected branch', async t => {
+  const { repoPath, remote, run } = await remoteFixture(t);
+  git(repoPath, 'switch', '-c', 'private');
+  await commit(repoPath, 'private content\n', 'private.txt');
+  git(repoPath, 'tag', '-a', 'private-annotated', '-m', 'Private tag');
+  git(repoPath, 'switch', 'main');
+  await commit(repoPath, 'publish content\n');
+  git(repoPath, 'tag', '-a', 'public-annotated', '-m', 'Release');
+  git(repoPath, 'tag', 'local-lightweight');
+  await run('push', { confirmed: true });
+  assert.equal(git(remote, `--git-dir=${remote}`, 'tag', '--list'), '');
+  await run('push', { followTags: true, confirmed: true });
+  assert.equal(git(remote, `--git-dir=${remote}`, 'tag', '--list'), 'public-annotated');
+  assert.equal(git(remote, `--git-dir=${remote}`, 'branch', '--format=%(refname:short)'), 'main');
+});

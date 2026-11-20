@@ -354,3 +354,24 @@ test('an empty commit preserves staged changes for the next commit', async t => 
   assert.equal(git('show', 'HEAD:tracked.txt'), 'head');
   assert.equal(git('show', ':tracked.txt'), 'staged');
 });
+
+test('commit can amend all files and append the Git sign-off trailer', async t => {
+  const { gitCommit } = await import('../plugins/source-control-proof/git-commit.mjs');
+  const { repoPath, git, write } = await fixture(t, { 'existing.txt': 'original\n' });
+  await write('existing.txt', 'updated\n');
+  await write('new.txt', 'new\n');
+  await gitCommit({ repoPath, action: 'amend', all: true, signoff: true, confirmed: true });
+  assert.equal(git('show', 'HEAD:existing.txt'), 'updated\n');
+  assert.equal(git('show', 'HEAD:new.txt'), 'new\n');
+  assert.match(git('show', '-s', '--format=%B'), /^Fixture\n\nSigned-off-by: Proof <proof@example\.test>/);
+  assert.equal(git('status', '--porcelain'), '');
+});
+
+test('reads an explicitly configured commit template with repository-relative paths', async t => {
+  const { gitCommitTemplate } = await import('../plugins/source-control-proof/git-commit.mjs');
+  const { repoPath, git, write } = await fixture(t);
+  assert.equal((await gitCommitTemplate({ repoPath })).template, null);
+  git('config', 'commit.template', 'team template.txt');
+  await write('team template.txt', 'Subject\n\n# Details\n');
+  assert.equal((await gitCommitTemplate({ repoPath })).template, 'Subject\n\n# Details\n');
+});

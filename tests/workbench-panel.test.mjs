@@ -27,7 +27,7 @@ test('panel helpers build graph edges, aligned diff rows and a literal path tree
 test('workbench tools restrict operations to the panel and reject unknown arguments', async () => {
   const { handle } = await import('../plugins/source-control-proof/server.mjs');
   const { tools } = await handle('tools/list');
-  for (const name of ['git_history', 'git_history_detail', 'git_compare', 'git_blame', 'git_patch', 'git_apply_patch', 'git_change', 'git_commit', 'git_references', 'git_operation', 'git_conflict']) {
+  for (const name of ['git_history', 'git_history_detail', 'git_compare', 'git_blame', 'git_patch', 'git_apply_patch', 'git_change', 'git_commit', 'git_commit_template', 'git_references', 'git_operation', 'git_conflict']) {
     const tool = tools.find(item => item.name === name);
     assert.ok(tool, name);
     assert.deepEqual(tool._meta.ui.visibility, ['app']);
