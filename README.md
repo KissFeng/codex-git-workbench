@@ -1,54 +1,78 @@
 # Git Workbench for Codex
 
-Git Workbench manages local Git checkouts from a Codex desktop panel. It is based on [Source Control for Codex v0.5.1](https://github.com/saltnpixels/codex-source-control/tree/v0.5.1). The new marketplace and plugin identifiers allow the original installation to coexist.
+**English** · [简体中文](README.zh-CN.md)
 
-## Install
+A local Git workbench for Codex desktop. Review diffs, stage changes, and manage commits, branches, and worktrees.
 
-Use Codex desktop with local MCP Apps, Git 2.35 or later and Node.js 24 or later on PATH. The plugin uses the system Git and has no npm dependencies.
+[Quick start](#quick-start) · [Features](#features) · [Changelog](CHANGELOG.md)
 
-Install the tagged version from GitHub.
+![Codex desktop demo with projects on the left, a chat in the center, and Git Workbench docked on the right](docs/workbench-codex.en.png)
+
+*Git Workbench beside a Codex chat. The projects, conversation, and Git data shown are fictional.*
+
+## Quick start
+
+You'll need Codex desktop with local MCP Apps support, Git 2.35 or later, and Node.js 24 or later. Make sure `git` and `node` are on your PATH. The plugin has no npm dependencies.
+
+Install [v0.8.1](https://github.com/KissFeng/codex-git-workbench/releases/tag/v0.8.1) from GitHub.
 
 ```sh
 codex plugin marketplace add KissFeng/codex-git-workbench --ref v0.8.1
 codex plugin add codex-git-workbench@kissfeng-git-tools
 ```
 
-Open **Git Workbench** from the panel picker. Reopen Codex if the new panel or version does not appear. For local development, run `codex plugin marketplace add "$PWD"` from a repository checkout, then install the plugin using the same identifier.
+Open **Git Workbench** from the panel picker. Reopen Codex if the panel or the updated version does not appear. Select a repository from your saved Codex projects and worktrees, or enter the absolute path to a local checkout.
 
-## Workflows
+## Features
 
-The language selector in the Source Control header switches between Simplified Chinese and English. The panel defaults to Simplified Chinese and remembers the selected language. Repository names, paths and Git content keep their original text.
-
-Repositories, Changes and Graph are visible together. Collapse sections or drag the divider to allocate room between changes and history. Hover a row to reveal its actions, or open its context menu with a right-click or Shift+F10. On narrow panels, Back returns from the preview to the originating row and scroll position.
-
-The commit button follows the checkout state. A clean, ahead or behind branch offers synchronization. Git operations in progress and unresolved conflicts have dedicated actions. Cmd/Ctrl+Enter in the message field triggers the commit flow.
-
-
-| Area | Panel capabilities |
+| Workflow | What you can do |
 | --- | --- |
-| Repositories | Discover saved Codex projects and linked worktrees. Open an absolute checkout path, initialize a repository or clone with optional submodules. |
-| Changes | Browse changes as a list or tree. Open source, unified or split Diff, and image snapshots. Stage or unstage individual files, groups, text hunks and selected lines. Discard selected text or tracked changes, remove confirmed untracked files, ignore files, rename or delete files. |
-| Commits | Commit staged files with Cmd/Ctrl+Enter, commit all, amend, create empty commits and undo an unpublished commit. The options dialog supports all-file amend, a commit template, cryptographic signing, Git sign-off and explicitly skipping hooks. |
-| History | Inspect all branches and tags or filter by references. Expand a commit to see its files, locate the current commit and compare incoming or outgoing changes against their common base. View commit messages and changed files, compare refs or the working copy, follow file history and inspect line attribution. |
-| Branches and remotes | Switch local or tracked remote branches, check out detached revisions, manage branches and tags, add or remove remotes, fetch, pull, push, publish an upstream and sync. Sync defaults to fast-forward only. Choose rebase sync or include reachable annotated tags when needed. Force-push requires a lease for the previously selected remote tip. |
-| Conflicts and worktrees | Inspect base, ours, theirs and working content. Edit and stage eligible results or choose a version. Continue or abort merge, rebase and cherry-pick; create, view, apply, pop and drop stashes; manage worktrees and transfer pending changes. |
+| Repositories | Discover saved Codex projects and linked worktrees, open a local checkout by absolute path, initialize a repository, or clone with optional submodules. |
+| Review and stage changes | Browse changes as a list or tree. View source, unified or split diffs, and image snapshots. Stage or unstage files, groups, hunks, or selected lines. Discard tracked edits or remove untracked files after confirmation. Ignore, rename, or delete files. |
+| Commit | Commit staged or all changes, amend, create an empty commit, or undo an unpublished commit. Commit options include all-file amend, restoring the commit template, signing, sign-off, and skipping hooks. |
+| Explore history | Filter the commit graph by branch, tag, or other ref. Expand commits to see their files, locate HEAD, compare refs or the working copy, and review incoming and outgoing changes from their common base. Follow file history and inspect line attribution. |
+| Branches and remotes | Switch local or tracked remote branches, check out detached revisions, manage branches, tags, and remotes, and fetch, pull, push, publish, or sync. Sync defaults to fast-forward only, with options for rebase sync and pushing reachable annotated tags. Force pushes use a lease tied to the selected remote tip. |
+| Conflicts, stashes, and worktrees | Compare base, ours, theirs, and working copy versions of a conflict. Edit and stage eligible results or select a version. Continue or abort a merge, rebase, or cherry-pick. Create, inspect, apply, pop, or drop stashes. Create or remove worktrees and move pending changes between them. |
 
-Git hooks, credentials, signing and remote configuration come from the local Git installation. A failed sync stops before push. Disk-changing, history-rewriting and remote writes that need confirmation show their target in the panel.
+## Using the panel
 
-Use whole-file actions for binary files, symbolic links, renames and permission changes. File and image previews have size limits. Editor-specific Git actions such as file history, blame and merge resolution are available inside the panel. Commit message generation, GitHub sign-in and pull-request management are separate integrations.
+- **Layout.** Repositories, Changes, and Graph share one panel. Collapse sections or drag the divider to resize Changes and Graph. On narrow panels, **Back** returns from the preview to the same row and scroll position.
+- **Actions.** Hover over a row for shortcuts, or open its context menu with a right-click or **Shift+F10**. The primary action follows the checkout state, with controls for commits, sync, and conflicts. Press **Cmd/Ctrl+Enter** in the commit message field to start the commit flow.
+- **Language.** Use the selector in the **Source Control** header to switch between Simplified Chinese and English. The panel starts in Simplified Chinese and remembers your selection. Repository names, paths, and Git content keep their original text.
 
-## Design and development
+### Wide layout
 
-The Git workflow reference is the [VS Code built-in Git extension](https://github.com/microsoft/vscode/tree/748f712f3050ae8f29d8af75ad560d7a88ac3322/extensions/git). The Codex interface uses the host's light and dark schemes. Its JavaScript frontend talks to a local stdio MCP service. File, history and Git mutation tools are panel-only. Git commands execute in the selected checkout and plugin writes are queued by the common Git directory across linked worktrees.
+![Git Workbench showing staged files, the commit graph, and a split diff](docs/workbench-wide.en.png)
+
+*Wide layout with a split diff, using sample repository data.*
+
+### Narrow side panel
+
+<p align="center">
+  <img src="docs/workbench-sidebar.en.png" width="400" alt="Narrow Git Workbench panel in dark mode with repositories, changes, and the commit graph">
+</p>
+
+*Narrow side panel in dark mode, using sample repository data.*
+
+Git uses your local hooks, credentials, signing, and remotes. When a write requires confirmation, the panel shows the target first. If a sync fails during the pull, it stops before pushing.
+
+Use whole-file actions for binary files, symbolic links, renames, and permission changes. File and image previews have size limits. Commit message generation, GitHub sign-in, and pull request management are separate integrations.
+
+## Development
+
+Register a local checkout as a marketplace from the repository root, then install the plugin.
 
 ```sh
-npm test
+codex plugin marketplace add "$PWD"
+codex plugin add codex-git-workbench@kissfeng-git-tools
 ```
 
-The Node test suite creates disposable local repositories and bare remotes. It covers staging and commits, conflicts and remotes, graph and path handling, Codex project discovery, and the packaged MCP resource. CI runs on macOS and Linux.
+Run `npm test` with Node.js 24 or later. The suite uses temporary local repositories and bare remotes to test staging, commits, conflicts, remotes, history, path handling, Codex project discovery, and the packaged MCP resource. CI runs on macOS and Linux.
 
-## License
+The JavaScript panel follows Codex's light and dark themes and talks to a local MCP service over stdio. File, history, and Git mutation tools are available only to the panel. Git commands run in the selected checkout, and linked worktrees share a write queue keyed by their common Git directory.
 
-[MIT](LICENSE). The upstream license and Git history are preserved.
+## License and credits
 
-The packaged [third-party notices](plugins/source-control-proof/THIRD_PARTY_NOTICES.md) cover the adapted Code - OSS graph logic.
+Licensed under [MIT](LICENSE). The plugin is based on [Source Control for Codex v0.5.1](https://github.com/saltnpixels/codex-source-control/tree/v0.5.1) and preserves its license and Git history. Its own marketplace and plugin identifiers let it coexist with the upstream plugin.
+
+Git workflows draw on the [VS Code Git extension](https://github.com/microsoft/vscode/tree/748f712f3050ae8f29d8af75ad560d7a88ac3322/extensions/git). See the [third-party notices](plugins/source-control-proof/THIRD_PARTY_NOTICES.md) for the adapted Code - OSS graph logic.
