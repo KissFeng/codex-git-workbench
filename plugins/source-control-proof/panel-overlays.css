@@ -31,11 +31,7 @@
 }
 
 .sc-menu-item:disabled { background: transparent; }
-.sc-menu-item:focus {
-  background: var(--hover);
-  outline: 1px solid var(--border);
-  outline-offset: -1px;
-}
+.sc-menu-item:focus { background: var(--hover); }
 .sc-menu-divider {
   height: 1px;
   margin: 4px;
@@ -50,12 +46,7 @@
 }
 .sc-dialog-body .sc-branch-picker { width: 100%; }
 .sc-branch-search { padding: 8px 10px; }
-.sc-branch-search:focus-within {
-  outline: 1px solid var(--accent);
-  outline-offset: -1px;
-}
 .sc-branch-search input { font-size: 13px; }
-.sc-branch-search input:focus-visible { outline: none; }
 .sc-branch-results {
   max-height: 340px;
   min-height: 0;

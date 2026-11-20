@@ -1,4 +1,12 @@
 export const actionMessages = {
+  'Open file': '打开文件',
+  'Open containing folder': '打开所在文件夹',
+  'Opening files on this desktop is unavailable.': '当前系统无法打开本地文件。',
+  'The file no longer exists.': '工作区中的这个文件已不存在。',
+  'The folder no longer exists.': '工作区中的这个文件夹已不存在。',
+  'The requested file or folder is unavailable.': '无法访问所选文件或文件夹。',
+  'Could not open the folder.': '无法打开所在文件夹。',
+  'Could not open the file.': '无法打开此文件。',
   'Actions': '操作',
   'Copy text': '复制文本',
   'Copied': '已复制',

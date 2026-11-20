@@ -46,6 +46,30 @@ test('assembled panel script parses as one module and only targets declared IDs'
   assert.equal(check.status, 0, check.stderr);
 });
 
+test('packaged panel has two single-line separators, a repository name and a fixed Star footer', async () => {
+  const { panelHtml } = await import('../plugins/source-control-proof/server.mjs');
+  const { shellMessages } = await import('../plugins/source-control-proof/panel-messages-shell.mjs');
+  const html = (await panelHtml()).split('<script type="module">')[0];
+  assert.equal([...html.matchAll(/role="separator"/g)].length, 2);
+  assert.match(html, /id="repositories-section"[\s\S]*id="repository-divider"[\s\S]*id="changes-section"[\s\S]*id="scm-divider"[\s\S]*id="history-section"/);
+  assert.match(html, /\.sc-scm-divider::after\s*\{[^}]*height:\s*1px/);
+  assert.match(html, /id="current-project"[^>]*hidden/);
+  const footer = html.match(/<footer[^>]*>([\s\S]*?)<\/footer>/)[1];
+  assert.match(footer.trim(), /^<a[^>]*href="https:\/\/github\.com\/KissFeng\/codex-git-workbench"[^>]*>Thanks for your support! Give us a star ⭐<\/a>$/);
+  assert.equal(shellMessages['Thanks for your support! Give us a star ⭐'], '感谢支持，欢迎点个star⭐');
+  assert.match(html, /class="sc-footer"/);
+  assert.match(html, /\.sc-footer a\s*\{[^}]*white-space:\s*nowrap/);
+});
+
+test('controls use subtle focus styles while selected file rows keep their highlight', async () => {
+  const { panelHtml } = await import('../plugins/source-control-proof/server.mjs');
+  const css = (await panelHtml()).match(/<style>([\s\S]+?)<\/style>/)[1];
+  assert.doesNotMatch(css, /outline:\s*\d+px solid var\(--accent\)/);
+  assert.match(css, /button:focus-visible,\s*select:focus-visible\s*\{[^}]*outline:\s*none;[^}]*background-color:\s*var\(--hover\)/);
+  assert.match(css, /textarea:focus\s*\{[^}]*border-color:\s*var\(--focus-border\)/);
+  assert.match(css, /\.sc-file-row\[data-selected=true\]\s*\{[^}]*background:\s*var\(--selection\)/);
+});
+
 test('MCP panel tools stage selected new lines, commit the index and read the same commit history', async t => {
   const { execFileSync } = await import('node:child_process');
   const { mkdtemp, rm, writeFile } = await import('node:fs/promises');

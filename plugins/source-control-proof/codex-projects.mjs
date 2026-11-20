@@ -8,6 +8,30 @@ export function codexHome() {
   return process.env.CODEX_HOME || join(homedir(), '.codex');
 }
 
+async function stateDatabases(directory) {
+  return (await readdir(directory)).filter(file => /^state_\d+\.sqlite$/.test(file))
+    .sort((a, b) => Number(b.match(/\d+/)[0]) - Number(a.match(/\d+/)[0]));
+}
+
+export async function readCodexThread(threadId) {
+  if (typeof threadId !== 'string' || !threadId || threadId.length > 128) return null;
+  const directory = codexHome();
+  try {
+    const { DatabaseSync } = await import('node:sqlite');
+    for (const file of await stateDatabases(directory)) {
+      const db = new DatabaseSync(join(directory, file), { readOnly: true });
+      try {
+        const columns = new Set(db.prepare("PRAGMA table_info('threads')").all().map(column => column.name));
+        if (!columns.has('id') || !columns.has('cwd')) continue;
+        const projectId = columns.has('project_id') ? 'project_id' : 'NULL';
+        const thread = db.prepare(`SELECT cwd, ${projectId} AS projectId FROM threads WHERE id = ?`).get(threadId);
+        return typeof thread?.cwd === 'string' && isAbsolute(thread.cwd) ? thread : null;
+      } finally { db.close(); }
+    }
+  } catch { /* A missing or unreadable catalog cannot identify the launch checkout. */ }
+  return null;
+}
+
 function validRoots(roots) {
   return [...new Set(roots.filter(root => typeof root === 'string' && isAbsolute(root)))];
 }
@@ -31,8 +55,7 @@ function legacyProjects(state) {
 export async function readCodexProjects() {
   const directory = codexHome();
   try {
-    const databases = (await readdir(directory)).filter(file => /^state_\d+\.sqlite$/.test(file))
-      .sort((a, b) => Number(b.match(/\d+/)[0]) - Number(a.match(/\d+/)[0]));
+    const databases = await stateDatabases(directory);
     if (databases.length) {
       const { DatabaseSync } = await import('node:sqlite');
       for (const file of databases) {

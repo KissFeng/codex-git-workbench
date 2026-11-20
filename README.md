@@ -21,13 +21,13 @@ codex plugin marketplace add KissFeng/codex-git-workbench --ref v0.8.1
 codex plugin add codex-git-workbench@kissfeng-git-tools
 ```
 
-Open **Git Workbench** from the panel picker. Reopen Codex if the panel or the updated version does not appear. Select a repository from your saved Codex projects and worktrees, or enter the absolute path to a local checkout.
+Open **Git Workbench** from the panel picker. When Codex provides a chat with a Git working directory, the workbench selects that checkout. You can look up saved projects and worktrees or open another checkout from the repository picker. Reopen Codex if the panel or the updated version does not appear.
 
 ## Features
 
 | Workflow | What you can do |
 | --- | --- |
-| Repositories | Discover saved Codex projects and linked worktrees, open a local checkout by absolute path, initialize a repository, or clone with optional submodules. |
+| Repositories | Find saved Codex projects and linked worktrees, choose a folder on macOS or Windows, initialize a repository, or clone with optional submodules. Enter an absolute path when the folder picker is unavailable. |
 | Review and stage changes | Browse changes as a list or tree. View source, unified or split diffs, and image snapshots. Stage or unstage files, groups, hunks, or selected lines. Discard tracked edits or remove untracked files after confirmation. Ignore, rename, or delete files. |
 | Commit | Commit staged or all changes, amend, create an empty commit, or undo an unpublished commit. Commit options include all-file amend, restoring the commit template, signing, sign-off, and skipping hooks. |
 | Explore history | Filter the commit graph by branch, tag, or other ref. Expand commits to see their files, locate HEAD, compare refs or the working copy, and review incoming and outgoing changes from their common base. Follow file history and inspect line attribution. |
@@ -36,8 +36,8 @@ Open **Git Workbench** from the panel picker. Reopen Codex if the panel or the u
 
 ## Using the panel
 
-- **Layout.** Repositories, Changes, and Graph share one panel. Collapse sections or drag the divider to resize Changes and Graph. On narrow panels, **Back** returns from the preview to the same row and scroll position.
-- **Actions.** Hover over a row for shortcuts, or open its context menu with a right-click or **Shift+F10**. The primary action follows the checkout state, with controls for commits, sync, and conflicts. Press **Cmd/Ctrl+Enter** in the commit message field to start the commit flow.
+- **Layout.** Repositories, Changes, and Graph share one panel. Collapse sections or drag either divider to resize its neighboring sections. On narrow panels, **Back** returns from the preview to the same row and scroll position.
+- **Actions.** Hover over a row for shortcuts, or open its context menu with a right-click or **Shift+F10**. On macOS and Windows, the file menu can open a file or its containing folder. The primary action follows the checkout state, with controls for commits, sync, and conflicts. Press **Cmd/Ctrl+Enter** in the commit message field to start the commit flow.
 - **Language.** Use the selector in the **Source Control** header to switch between Simplified Chinese and English. The panel starts in Simplified Chinese and remembers your selection. Repository names, paths, and Git content keep their original text.
 
 ### Wide layout

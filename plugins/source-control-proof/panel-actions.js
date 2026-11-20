@@ -12,7 +12,7 @@ function copyText(value) {
     return;
   }
   return navigator.clipboard.writeText(value)
-    .then(() => uiText(el('staging-message'), msg('Copied')))
+    .then(() => showActionMessage(msg('Copied')))
     .catch(showCopyField);
 }
 
@@ -190,7 +190,7 @@ async function restoreCommitTemplate() {
     const result = await callTool('git_commit_template', { repoPath: state.checkout });
     if (epoch !== state.epoch) return;
     if (result.template === null) {
-      uiText(el('staging-message'), msg('No commit template is configured.'));
+      showActionMessage(msg('No commit template is configured.'));
       return;
     }
     const apply = () => {

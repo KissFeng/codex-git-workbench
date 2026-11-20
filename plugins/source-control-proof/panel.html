@@ -2,6 +2,10 @@
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title data-i18n>Git Workbench</title><style>/* PANEL_CSS */</style></head><body>
 <div class="sc-app" data-pane="workspace">
+<div class="sc-workspace-feedback">
+  <p id="error" class="sc-workspace-error" role="alert" hidden></p>
+  <p id="staging-message" class="sc-action-message" role="status" aria-live="polite"></p>
+</div>
 <main class="sc-workspace">
   <aside id="scm-rail" class="sc-rail" aria-label="Source control">
     <header class="sc-rail-header">
@@ -15,23 +19,31 @@
         <button id="commands" class="sc-icon-button" type="button" aria-label="Source control actions" data-icon="more" aria-haspopup="menu"></button>
       </div>
     </header>
+    <div id="scm-split" class="sc-scm-split">
     <section id="repositories-section" class="sc-region sc-repositories" aria-labelledby="repositories-heading">
       <div class="sc-region-bar">
         <h2 id="repositories-heading">
           <button class="sc-region-toggle" type="button" data-section="repositories" data-icon="chevron" aria-expanded="true" aria-controls="repository-list"><span data-i18n>Repositories</span></button>
         </h2>
+        <span id="current-project" class="sc-current-project" hidden></span>
         <div class="sc-repository">
           <button id="project" class="sc-icon-button" type="button" data-icon="search" aria-label="Find or open checkout" aria-expanded="false" aria-controls="project-popover" aria-haspopup="dialog"></button>
     <div id="project-popover" class="sc-project-popover" role="dialog" aria-label="Choose repository" hidden>
       <div class="sc-search"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5"/><path d="m13 13 4 4"/></svg><input id="project-search" aria-label="Search repositories" placeholder="Search repositories or branches…" autocomplete="off"><kbd>esc</kbd></div>
       <div id="project-list" class="sc-project-list"></div>
-      <div class="sc-picker-footer"><button id="open-custom" type="button"><span aria-hidden="true">＋</span> <span data-i18n>Open another checkout…</span></button><form id="custom-form" hidden><label for="custom-path" data-i18n>Checkout path</label><div class="sc-custom-row"><input id="custom-path" placeholder="/absolute/path/to/checkout" autocomplete="off"><button type="submit" data-i18n>Open</button></div></form></div>
+      <div class="sc-picker-footer">
+        <button id="open-custom" type="button"><span aria-hidden="true">＋</span> <span data-i18n>Open another checkout…</span></button>
+        <button id="open-by-path" type="button" hidden data-i18n>Enter path…</button>
+        <form id="custom-form" hidden><div class="sc-custom-row"><input id="custom-path" aria-label="Checkout path" placeholder="/absolute/path/to/checkout" autocomplete="off"><button type="submit" data-i18n>Open</button></div></form>
+        <p id="picker-error" class="sc-picker-error" role="alert" hidden></p>
+      </div>
     </div>
         </div>
       </div>
       <div id="repository-list" class="sc-region-body sc-repo-list"></div>
     </section>
-    <div id="scm-split" class="sc-scm-split">
+      <div id="repository-divider" class="sc-scm-divider" tabindex="0" role="separator" aria-label="Resize repositories and changes"
+        aria-orientation="horizontal" aria-controls="repository-list changes-body" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50"></div>
       <section id="changes-section" class="sc-region sc-changes" aria-labelledby="changes-heading">
         <div class="sc-region-bar">
           <h2 id="changes-heading">
@@ -95,9 +107,8 @@
     <div id="detail" class="sc-detail" hidden></div>
   </section>
 </main>
-<p id="error" class="sc-workspace-error" role="alert" hidden></p>
-<footer class="sc-footer"><span id="staging-message" class="sc-action-message" role="status" aria-live="polite"></span><span class="sc-updated"><span class="sc-status-dot" id="status-dot"></span><span id="time" data-i18n>Connecting to Git</span></span></footer>
-<div hidden><div id="context"></div><pre id="diagnostics" data-i18n>Waiting for host initialization</pre></div>
+<footer class="sc-footer"><a id="star-link" href="https://github.com/KissFeng/codex-git-workbench" target="_blank" rel="noopener noreferrer" data-i18n>Thanks for your support! Give us a star ⭐</a></footer>
+<pre id="diagnostics" hidden data-i18n>Waiting for host initialization</pre>
 </div>
 <dialog id="action-dialog" class="sc-dialog" aria-labelledby="action-title">
   <div class="sc-dialog-heading"><h2 id="action-title"></h2><button type="button" class="sc-control" id="action-close" aria-label="Close dialog">×</button></div>

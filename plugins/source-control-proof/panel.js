@@ -1,11 +1,13 @@
 const el = id => document.getElementById(id);
 const groups = [['conflicts', 'Merge Changes'], ['staged', 'Staged Changes'], ['unstaged', 'Changes']];
 const collapsedFileGroups = new Set();
-const state = { checkout: null, status: null, selection: null, mode: 'diff', projects: [], homeDirectory: '', epoch: 0, viewRequest: 0, statusRequest: 0, staging: null, refreshEpoch: null, hostContext: {} };
+const state = { checkout: null, projectId: null, status: null, selection: null, mode: 'diff', projects: [], homeDirectory: '', epoch: 0, viewRequest: 0, statusRequest: 0, staging: null, refreshEpoch: null, hostContext: {} };
 const pending = new Map();
 let requestId = 0, pickerSignature = '';
 const expandedProjects = new Set();
 let imageSignature = '', catalogRequest = null, displayedTextView = null;
+let pickerRequest = false, pickerEpoch = 0, actionMessageTimer;
+let launchReady = false, launchResult;
 
 function shortPath(path) {
   const home = state.homeDirectory.replace(/[\\/]+$/, '');
@@ -46,7 +48,9 @@ function icon(name, className = '') {
 function request(method, params) {
   return new Promise((resolve, reject) => {
     const id = ++requestId;
-    const timeout = setTimeout(() => { pending.delete(id); reject(new Error('Git request timed out. Refresh to verify the result.')); }, params?.name === 'git_operation' || params?.name === 'git_commit' ? 200000 : 15000);
+    const limit = params?.name === 'desktop_pick_checkout' && !params.arguments?.path ? 60000
+      : ['git_operation', 'git_commit'].includes(params?.name) ? 200000 : 15000;
+    const timeout = setTimeout(() => { pending.delete(id); reject(new Error('Git request timed out. Refresh to verify the result.')); }, limit);
     pending.set(id, { resolve, reject, timeout });
     window.parent.postMessage({ jsonrpc: '2.0', id, method, params }, '*');
   });
@@ -57,21 +61,28 @@ async function callTool(name, args = {}) {
   return result.structuredContent;
 }
 function showError(message = '') {
-  const display = message === 'Git request timed out. Refresh to verify the result.' ? msg(message) : message;
-  uiText(el('error'), display); el('error').hidden = !message; el('status-dot').dataset.error = String(!!message); }
+  uiText(el('error'), msg(message));
+  el('error').hidden = !message;
+}
+function showActionMessage(message = '', { pending = false } = {}) {
+  clearTimeout(actionMessageTimer);
+  const node = el('staging-message');
+  uiText(node, message);
+  if (message && !pending) actionMessageTimer = setTimeout(() => uiText(node, ''), 4000);
+}
 function savePreference() {
   window.openai?.setWidgetState?.({
-    checkout: state.checkout, mode: state.mode, tree: workbench.tree,
-    split: shellState.ratio, collapsed: [...shellState.collapsed], language: panelLanguage,
+    mode: state.mode, tree: workbench.tree, split: shellState.legacyRatio,
+    sectionSizes: shellState.sizes, collapsed: [...shellState.collapsed], language: panelLanguage,
   });
 }
 function renderPicker() {
-  const currentProject = state.projects.find(project => project.checkouts.some(checkout => checkout.path === state.checkout));
+  const currentProject = currentCatalogProject();
   const isWorktree = currentProject && state.checkout !== currentProject.path;
   const projectLabel = currentProject ? isWorktree ? msg('{project} · Worktree', { project: currentProject.label }) : currentProject.label
-    : state.checkout?.split(/[\\/]/).filter(Boolean).at(-1) || msg('Choose repository');
+    : checkoutDirectoryName(state.checkout) || msg('Choose repository');
   const query = el('project-search').value.trim().toLowerCase();
-  const signature = JSON.stringify([state.projects, state.checkout, state.homeDirectory, query, [...expandedProjects]]);
+  const signature = JSON.stringify([state.projects, state.checkout, state.projectId, state.homeDirectory, query, [...expandedProjects]]);
   if (signature === pickerSignature) return;
   pickerSignature = signature;
   const list = el('project-list'); list.replaceChildren(); const known = new Set();
@@ -118,12 +129,45 @@ function renderPicker() {
 }
 function openPicker() {
   el('project-popover').hidden = false; el('project').setAttribute('aria-expanded', 'true');
-  el('project-search').value = ''; el('custom-form').hidden = true; renderPicker(); el('project-search').focus();
+  el('project-search').value = ''; el('custom-form').hidden = true;
+  el('picker-error').hidden = true;
+  renderPicker(); el('project-search').focus();
   refreshProjects().catch(error => showError(error.message));
 }
 function closePicker(restoreFocus = true) {
+  if (!el('project-popover').hidden) pickerEpoch++;
   el('project-popover').hidden = true; el('project').setAttribute('aria-expanded', 'false');
   if (restoreFocus) el('project').focus();
+}
+async function chooseCheckout(path) {
+  if (pickerRequest) return;
+  const openedAt = pickerEpoch;
+  const epoch = state.epoch;
+  const button = el('open-custom');
+  const errorText = el('picker-error');
+  pickerRequest = true;
+  button.disabled = true;
+  errorText.hidden = true;
+  try {
+    const { checkout } = await callTool('desktop_pick_checkout', {
+      ...(state.checkout ? { repoPath: state.checkout } : {}), ...(path ? { path } : {}), language: panelLanguage,
+    });
+    if (openedAt === pickerEpoch && epoch === state.epoch && checkout) {
+      closePicker();
+      await switchCheckout(checkout);
+    }
+  } catch (error) {
+    if (openedAt !== pickerEpoch || epoch !== state.epoch) return;
+    if (!path) el('open-by-path').hidden = false;
+    uiText(errorText, msg(error.message));
+    errorText.hidden = false;
+  } finally {
+    pickerRequest = false;
+    button.disabled = false;
+    if (openedAt === pickerEpoch && !path && !el('project-popover').hidden) {
+      (errorText.hidden ? button : el('open-by-path')).focus();
+    }
+  }
 }
 function emptyViewer(message) {
   displayedTextView = null;
@@ -217,7 +261,11 @@ function workingFileRow(file, group) {
   const imageFile = /\.(png|jpe?g|gif|webp|svg|avif|bmp|ico)$/i.test(file.path);
   button.append(icon(imageFile ? 'image' : 'file', 'sc-file-icon'), path);
   bindTooltip(button, description);
-  const entries = () => fileMenuEntries(selection);
+  const entries = () => {
+    const selected = state.selection;
+    if (selected?.path !== file.path || selected?.group !== group) selectWorkingFile(file, group, { revealPreview: false });
+    return fileMenuEntries(selection);
+  };
   const actions = element('div', 'sc-file-actions');
   if (group !== 'conflicts') {
     const diff = repositoryButton('Open Diff', 'diff', () => { setMode('diff'); selectWorkingFile(file, group); });
@@ -252,13 +300,12 @@ function workingFileRow(file, group) {
 
 function renderStatus(data) {
   state.checkout = data.checkout; state.status = data;
+  if (Object.hasOwn(data, 'projectId')) state.projectId = data.projectId;
   for (const project of state.projects) for (const checkout of project.checkouts) if (checkout.path === data.checkout) checkout.branch = data.branch;
   const fileGroups = [...groups.map(([group]) => data[group]), data.untracked];
   const count = new Set(fileGroups.flatMap(files => files.map(file => file.path))).size;
   el('total-count').textContent = count;
   el('total-count').hidden = !count;
-  uiText(el('context'), msg('Checkout source: {source}', { source: data.contextSource }));
-  uiText(el('time'), msg('Checked {time}', { time: new Date(data.checkedAt) }));
   uiText(el('diagnostics'), JSON.stringify({ launchDirectory: data.launchDirectory, contextSource: data.contextSource, hostContextKeys: Object.keys(state.hostContext) }, null, 2));
   if (state.selection && !data[state.selection.group].some(f => f.path === state.selection.path)) {
     state.selection = null;
@@ -301,7 +348,7 @@ async function changeStaging(path, group) {
   const epoch = state.epoch, checkout = state.checkout, action = group === 'staged' ? 'unstage' : 'stage';
   const restoreFocus = document.activeElement?.classList.contains('sc-file-stage'); let failed = false;
   state.staging = { epoch, checkout, path, action }; state.statusRequest++; state.viewRequest++; state.refreshEpoch = null;
-  el('refresh').disabled = true; uiText(el('staging-message'), msg(action === 'stage' ? 'Staging {file}…' : 'Unstaging {file}…', { file: path.split('/').at(-1) })); updateCommitButton(); renderHistoryStatus(); renderFiles();
+  el('refresh').disabled = true; showActionMessage(msg(action === 'stage' ? 'Staging {file}…' : 'Unstaging {file}…', { file: path.split('/').at(-1) }), { pending: true }); updateCommitButton(); renderHistoryStatus(); renderFiles();
   try {
     const data = await callTool('git_staging', { repoPath: checkout, path, group, action });
     if (epoch !== state.epoch) return;
@@ -313,9 +360,9 @@ async function changeStaging(path, group) {
     }
     renderStatus(data);
     showError();
-    uiText(el('staging-message'), msg(action === 'stage' ? 'Staged {file}' : 'Unstaged {file}', { file: path.split('/').at(-1) }));
+    showActionMessage(msg(action === 'stage' ? 'Staged {file}' : 'Unstaged {file}', { file: path.split('/').at(-1) }));
     if (state.selection && workbench.preview === 'file') await loadFile();
-  } catch (error) { failed = true; if (epoch === state.epoch) { showError(error.message); uiText(el('staging-message'), msg('Unable to confirm the staging result.')); } }
+  } catch (error) { failed = true; if (epoch === state.epoch) { showError(error.message); showActionMessage(msg('Unable to confirm the staging result.')); } }
   finally {
     state.staging = null; updateCommitButton(); renderHistoryStatus(); renderFiles(); el('refresh').disabled = state.refreshEpoch !== null;
     if (epoch !== state.epoch || failed) await refresh({ force: true });
@@ -335,12 +382,11 @@ async function switchCheckout(checkout, { focusRepository = false } = {}) {
   const epoch = ++state.epoch;
   state.viewRequest++;
   state.checkout = checkout;
+  state.projectId = null;
   state.selection = null;
   state.status = null;
   newCheckout(previous);
-  uiText(el('staging-message'), '');
-  uiText(el('context'), '');
-  uiText(el('time'), msg('Reading Git status…'));
+  showActionMessage();
   el('total-count').hidden = true;
   renderPicker();
   renderRepositories();
@@ -437,11 +483,25 @@ function setMode(mode) {
     else { resetPreview(); clearCode(msg('Loading file…')); loadFile(); }
   }
 }
+function applyLaunchStatus(data) {
+  if (state.epoch !== 0 || state.checkout || !data?.checkout || typeof data.branch !== 'string') return;
+  if (!launchReady) {
+    launchResult = data;
+    return;
+  }
+  setSectionCollapsed('repositories', true, { persist: false });
+  renderStatus(data);
+}
+function finishLaunch(toolOutput) {
+  launchReady = true;
+  applyLaunchStatus(launchResult || toolOutput);
+  launchResult = undefined;
+}
 window.addEventListener('message', event => {
   if (event.source !== window.parent || event.data?.jsonrpc !== '2.0') return;
   const message = event.data, waiting = pending.get(message.id);
   if (waiting) { clearTimeout(waiting.timeout); pending.delete(message.id); message.error ? waiting.reject(new Error(message.error.message)) : waiting.resolve(message.result); return; }
-  if (message.method === 'ui/notifications/tool-result' && state.epoch === 0 && message.params?.structuredContent?.branch) renderStatus(message.params.structuredContent);
+  if (message.method === 'ui/notifications/tool-result') applyLaunchStatus(message.params?.structuredContent);
   if (message.method === 'ui/notifications/host-context-changed') {
     state.hostContext = { ...state.hostContext, ...message.params };
     if (state.hostContext.theme) document.documentElement.style.colorScheme = state.hostContext.theme;
@@ -455,8 +515,15 @@ el('refresh').onclick = async () => {
 };
 el('project').onclick = () => { if (el('project-popover').hidden) openPicker(); else closePicker(); };
 el('project-search').oninput = renderPicker;
-el('open-custom').onclick = () => { el('custom-form').hidden = false; el('custom-path').focus(); };
-el('custom-form').onsubmit = event => { event.preventDefault(); const path = el('custom-path').value.trim(); if (path) { closePicker(); switchCheckout(path); } };
+el('open-custom').onclick = () => chooseCheckout();
+el('open-by-path').onclick = () => { el('custom-form').hidden = false; el('custom-path').focus(); };
+el('custom-form').onsubmit = event => { event.preventDefault(); const path = el('custom-path').value.trim(); if (path) chooseCheckout(path); };
+el('star-link').onclick = event => {
+  event.preventDefault();
+  request('ui/open-link', { url: event.currentTarget.href }).then(result => {
+    if (result?.isError) showError('Could not open the GitHub link.');
+  }).catch(() => showError('Could not open the GitHub link.'));
+};
 document.addEventListener('pointerdown', event => { if (!el('project-popover').hidden && !event.target.closest('.sc-repository, .sc-workbench-overlay')) closePicker(false); });
 document.addEventListener('focusin', event => { if (!el('project-popover').hidden && !event.target.closest('.sc-repository, .sc-workbench-overlay')) closePicker(false); });
 document.addEventListener('keydown', event => {
@@ -486,10 +553,9 @@ initializeWorkbench();
       el('tree-toggle').setAttribute('aria-pressed', 'true');
       uiAttr(el('tree-toggle'), 'aria-label', msg('Show file list'));
     }
-    await refreshProjects();
-    if (!state.checkout && typeof preferences?.checkout === 'string') await switchCheckout(preferences.checkout);
-    else if (!state.checkout) {
-      uiText(el('time'), msg('Choose a checkout'));
+    finishLaunch(window.openai?.toolOutput);
+    await refreshProjects().catch(error => showError(error.message));
+    if (!state.checkout) {
       renderFiles();
       renderHistory();
     }

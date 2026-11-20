@@ -24,6 +24,24 @@ try {
   db.exec('CREATE TABLE projects (id TEXT PRIMARY KEY, name TEXT, position INTEGER); CREATE TABLE project_roots (project_id TEXT, position INTEGER, path TEXT);');
   db.prepare('INSERT INTO projects VALUES (?,?,?)').run('fixture','Multi-repository project',0);
   for (const [i,path] of roots.entries()) db.prepare('INSERT INTO project_roots VALUES (?,?,?)').run('fixture',i,path);
+  db.exec('CREATE TABLE threads (id TEXT PRIMARY KEY, cwd TEXT, project_id TEXT);');
+  const insertThread = db.prepare('INSERT INTO threads VALUES (?,?,?)');
+  const subdir = join(roots[1], 'src'); await mkdir(subdir);
+  const worktree = join(root, 'linked-worktree');
+  execFileSync('git', ['-C', roots[1], '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.com', '-c', 'commit.gpgsign=false', 'commit', '-q', '--allow-empty', '-m', 'Initial']);
+  execFileSync('git', ['-C', roots[1], 'worktree', 'add', '-q', '-b', 'topic', worktree]);
+  insertThread.run('project-chat', subdir, 'fixture');
+  insertThread.run('worktree-chat', worktree, 'fixture');
+  insertThread.run('non-git-chat', home, 'fixture');
+  const launch = async (args = {}, _meta) => (await handle('tools/call', {
+    name: 'source_control_panel', arguments: args, _meta,
+  })).structuredContent;
+  assert.equal((await launch({}, { threadId: 'project-chat' })).branch, 'branch-1');
+  assert.equal((await launch({}, { threadId: 'worktree-chat' })).branch, 'topic');
+  assert.equal((await launch({}, { thread_id: 'project-chat' })).projectId, 'fixture');
+  assert.equal((await launch({ repoPath: roots[0] }, { threadId: 'project-chat' })).branch, 'branch-0');
+  assert.equal((await launch({}, { threadId: 'non-git-chat' })).needsCheckout, true);
+  assert.equal((await launch({}, { threadId: 'unknown' })).needsCheckout, true);
   let catalog = await listProjects();
   assert.equal(catalog.discovery.source,'Codex local project database');
   assert.equal(catalog.projects.length,2);

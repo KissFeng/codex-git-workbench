@@ -1,7 +1,8 @@
 const workspaceSections = ['repositories', 'changes', 'history'];
+const workspaceDividers = ['repository-divider', 'scm-divider'];
 const narrowWorkspace = matchMedia('(max-width: 740px)');
 const railScrollIds = ['repository-list', 'changes-body', 'history-scroll'];
-const shellState = { collapsed: new Set(), ratio: 0.6, railFocus: null, previewReturn: null, repoSignature: '' };
+const shellState = { collapsed: new Set(), sizes: null, legacyRatio: 0.6, railFocus: null, previewReturn: null, repoSignature: '' };
 
 function isSectionCollapsed(section) {
   return shellState.collapsed.has(section);
@@ -19,23 +20,131 @@ function setSectionCollapsed(section, collapsed, { persist = true, load = true, 
     motion: motion && panelMotionEnabled(),
     onHidden: () => { node.dataset.collapsed = 'true'; },
   });
-  el('scm-divider').hidden = isSectionCollapsed('changes') || isSectionCollapsed('history');
+  workspaceDividers.forEach((id, index) => {
+    el(id).hidden = workspaceSections.slice(index, index + 2).some(isSectionCollapsed);
+  });
   if (section === 'history' && !collapsed && load) loadHistory();
   if (persist) savePreference();
 }
 
-function updateSplit(ratio, persist = false) {
-  shellState.ratio = scmSplitRatio(ratio);
-  el('scm-split').style.setProperty('--changes-share', shellState.ratio);
-  el('scm-split').style.setProperty('--history-share', 1 - shellState.ratio);
-  el('scm-divider').setAttribute('aria-valuenow', String(Math.round(shellState.ratio * 100)));
-  if (persist) savePreference();
+function workspaceSection(index) {
+  return el(workspaceSections[index] + '-section');
+}
+
+function workspaceHeights() {
+  return workspaceSections.map((_, index) => workspaceSection(index).getBoundingClientRect().height);
+}
+
+function dividerBounds(index, heights) {
+  const total = heights[index] + heights[index + 1];
+  const headerHeight = offset => workspaceSection(index + offset).querySelector('.sc-region-bar').getBoundingClientRect().height;
+  const beforeHeader = headerHeight(0), afterHeader = headerHeight(1);
+  if (total <= beforeHeader + afterHeader) return null;
+  const bodyMinimum = Math.min(28, (total - beforeHeader - afterHeader) / 2);
+  return { total, min: beforeHeader + bodyMinimum, max: total - afterHeader - bodyMinimum };
+}
+
+function updateDividerValues(heights = workspaceHeights()) {
+  workspaceDividers.forEach((id, index) => {
+    const divider = el(id);
+    if (divider.hidden) return;
+    const bounds = dividerBounds(index, heights);
+    if (!bounds) return;
+    const percent = value => String(Math.round(value * 100 / bounds.total));
+    divider.setAttribute('aria-valuemin', percent(bounds.min));
+    divider.setAttribute('aria-valuemax', percent(bounds.max));
+    divider.setAttribute('aria-valuenow', percent(Math.min(bounds.max, Math.max(bounds.min, heights[index]))));
+  });
+}
+
+function applyWorkspaceSizes(sizes, legacyRatio = 0.6) {
+  shellState.sizes = sizes;
+  const split = el('scm-split');
+  if (sizes) split.dataset.resized = '';
+  else delete split.dataset.resized;
+  workspaceSections.forEach((section, index) => {
+    split.style.setProperty(`--${section}-share`, (sizes || [0, legacyRatio, 1 - legacyRatio])[index]);
+  });
 }
 
 function restoreWorkspacePreferences(preferences) {
-  updateSplit(preferences?.split);
+  const sizes = preferences?.sectionSizes;
+  const validSizes = Array.isArray(sizes) && sizes.length === workspaceSections.length && sizes.every(size => Number.isFinite(size) && size > 0);
+  shellState.legacyRatio = scmSplitRatio(preferences?.split);
+  applyWorkspaceSizes(validSizes ? [...sizes] : null, shellState.legacyRatio);
   for (const section of workspaceSections) {
     setSectionCollapsed(section, Array.isArray(preferences?.collapsed) && preferences.collapsed.includes(section), { persist: false, load: false });
+  }
+}
+
+function bindWorkspaceDivider(id, index) {
+  const divider = el(id);
+  let drag;
+  const resize = (initial, bounds, position) => {
+    const heights = [...initial];
+    heights[index] = Math.max(bounds.min, Math.min(bounds.max, position));
+    heights[index + 1] = bounds.total - heights[index];
+    if (heights[index] === initial[index]) return false;
+    const sizes = [...heights];
+    workspaceSections.forEach((section, offset) => {
+      if (!isSectionCollapsed(section)) return;
+      sizes[offset] = bounds.collapsedSize;
+    });
+    applyWorkspaceSizes(sizes);
+    updateDividerValues(heights);
+    return true;
+  };
+  const move = event => {
+    if (!drag || !divider.hasPointerCapture(event.pointerId) || event.clientY === drag.lastY) return;
+    const target = drag.heights[index] + event.clientY - drag.y;
+    if (target === drag.heights[index] && drag.changed) {
+      applyWorkspaceSizes(drag.originalSizes, shellState.legacyRatio);
+      updateDividerValues(drag.heights);
+      drag.changed = false;
+    } else {
+      drag.changed = resize(drag.heights, drag.bounds, target) || drag.changed;
+    }
+    drag.lastY = event.clientY;
+  };
+  divider.addEventListener('pointerdown', event => {
+    if (event.button !== 0 || drag) return;
+    const heights = workspaceHeights();
+    const bounds = measureBounds(heights);
+    if (!bounds) return;
+    event.preventDefault();
+    divider.focus({ preventScroll: true });
+    divider.setPointerCapture(event.pointerId);
+    drag = { y: event.clientY, lastY: event.clientY, heights, bounds, originalSizes: shellState.sizes, changed: false };
+  });
+  divider.addEventListener('pointermove', move);
+  divider.addEventListener('pointerup', event => {
+    if (!divider.hasPointerCapture(event.pointerId)) return;
+    move(event);
+    divider.releasePointerCapture(event.pointerId);
+  });
+  divider.addEventListener('lostpointercapture', () => {
+    if (drag?.changed) savePreference();
+    drag = null;
+  });
+  divider.addEventListener('keydown', event => {
+    const heights = workspaceHeights();
+    const bounds = measureBounds(heights);
+    if (!bounds) return;
+    const step = bounds.total * 0.05;
+    const targets = { ArrowUp: heights[index] - step, ArrowDown: heights[index] + step, Home: bounds.min, End: bounds.max };
+    if (!Object.hasOwn(targets, event.key)) return;
+    event.preventDefault();
+    if (resize(heights, bounds, targets[event.key])) savePreference();
+  });
+
+  function measureBounds(heights) {
+    if (divider.hidden) return null;
+    const bounds = dividerBounds(index, heights);
+    if (!bounds) return null;
+    const previous = shellState.sizes;
+    const other = index === 0 ? 2 : 0;
+    bounds.collapsedSize = previous ? previous[other] * bounds.total / (previous[index] + previous[index + 1]) : bounds.total / 3;
+    return bounds;
   }
 }
 
@@ -92,7 +201,7 @@ function setupWorkspaceShell() {
   el('scm-rail').addEventListener('focusin', trackFocus);
   el('scm-rail').addEventListener('pointerdown', trackFocus);
   el('preview-back').onclick = () => closePreview();
-  el('scm-divider').ownerDocument.addEventListener('keydown', event => {
+  document.addEventListener('keydown', event => {
     if (event.key === 'Escape' && !event.defaultPrevented && shellState.previewReturn && !el('action-dialog').open) {
       event.preventDefault();
       closePreview();
@@ -101,35 +210,11 @@ function setupWorkspaceShell() {
   narrowWorkspace.addEventListener('change', () => {
     if (!narrowWorkspace.matches) closePreview({ restore: false });
   });
-  const divider = el('scm-divider');
-  const resize = event => {
-    const bounds = el('scm-split').getBoundingClientRect();
-    const fixed = ['changes', 'history'].map(section =>
-      el(section + '-section').querySelector('.sc-region-bar').getBoundingClientRect().height);
-    const available = bounds.height - fixed[0] - fixed[1] - divider.offsetHeight;
-    if (available > 0) updateSplit((event.clientY - bounds.top - fixed[0] - divider.offsetHeight / 2) / available);
-  };
-  divider.addEventListener('pointerdown', event => {
-    if (event.button !== 0) return;
-    event.preventDefault();
-    divider.focus({ preventScroll: true });
-    divider.setPointerCapture(event.pointerId);
-  });
-  divider.addEventListener('pointermove', event => {
-    if (divider.hasPointerCapture(event.pointerId)) resize(event);
-  });
-  divider.addEventListener('pointerup', event => {
-    if (!divider.hasPointerCapture(event.pointerId)) return;
-    resize(event);
-    divider.releasePointerCapture(event.pointerId);
-  });
-  divider.addEventListener('lostpointercapture', () => savePreference());
-  divider.addEventListener('keydown', event => {
-    const targets = { ArrowUp: shellState.ratio - 0.05, ArrowDown: shellState.ratio + 0.05, Home: 0.2, End: 0.8 };
-    if (!Object.hasOwn(targets, event.key)) return;
-    event.preventDefault();
-    updateSplit(targets[event.key], true);
-  });
+  workspaceDividers.forEach(bindWorkspaceDivider);
+  if (typeof ResizeObserver === 'function') {
+    const observer = new ResizeObserver(() => updateDividerValues());
+    workspaceSections.forEach((_, index) => observer.observe(workspaceSection(index)));
+  }
 }
 
 function repositoryButton(label, symbol, click) {
@@ -140,19 +225,36 @@ function repositoryButton(label, symbol, click) {
   return button;
 }
 
+function currentCatalogProject() {
+  const matches = state.projects.filter(project => project.checkouts.some(checkout => checkout.path === state.checkout));
+  const preferred = state.projectId ? matches.filter(project => project.projectId === state.projectId) : [];
+  const candidates = preferred.length ? preferred : matches;
+  return candidates.find(project => project.path === state.checkout) || candidates[0];
+}
+
+function checkoutDirectoryName(path) {
+  return path?.split(/[\\/]/).filter(Boolean).at(-1) || path || '';
+}
+
 function renderRepositories(animatedProject = null) {
   const list = el('repository-list');
   const active = list.contains(document.activeElement) ? railFocusKey(document.activeElement) : null;
   const activeStatus = state.status;
-  const signature = JSON.stringify([state.projects, state.checkout, activeStatus?.branch, activeStatus?.ahead, activeStatus?.behind,
+  const signature = JSON.stringify([state.projects, state.checkout, state.projectId, activeStatus?.branch, activeStatus?.ahead, activeStatus?.behind,
     activeStatus?.hasRemote, activeStatus?.upstream, activeStatus?.head, activeStatus?.operation, activeStatus?.detached, [...expandedProjects]]);
   if (signature === shellState.repoSignature) return;
   shellState.repoSignature = signature;
+  const currentProject = currentCatalogProject();
+  const name = currentProject?.projectName || currentProject?.label || checkoutDirectoryName(state.checkout);
+  const heading = el('current-project');
+  heading.textContent = name;
+  heading.title = name;
+  heading.hidden = !name;
   const scrollTop = list.scrollTop;
   const projects = [...state.projects];
   const knownPaths = new Set(projects.flatMap(project => project.checkouts.map(item => item.path)));
   if (state.checkout && !knownPaths.has(state.checkout)) {
-    projects.unshift({ path: state.checkout, label: state.checkout.split(/[\\/]/).filter(Boolean).at(-1) || state.checkout,
+    projects.unshift({ path: state.checkout, label: checkoutDirectoryName(state.checkout),
       checkouts: [{ path: state.checkout, branch: activeStatus?.branch || '' }] });
   }
   const items = document.createDocumentFragment();
@@ -161,7 +263,7 @@ function renderRepositories(animatedProject = null) {
     emitted.add(checkout.path);
     const current = state.checkout === checkout.path;
     const status = current ? activeStatus : null;
-    const name = linked ? checkout.path.split(/[\\/]/).filter(Boolean).at(-1) || checkout.path : project.label;
+    const name = linked ? checkoutDirectoryName(checkout.path) : project.label;
     const branchName = status?.branch || checkout.branch;
     const branchLabel = status?.detached ? msg('Detached HEAD · {commit}', { commit: status.head?.slice(0, 7) || 'HEAD' }) : branchName;
     const entry = element('div', 'sc-repo-row' + (linked ? ' sc-repo-linked' : ''));
@@ -298,7 +400,7 @@ function submitCommit() {
   const message = el('commit-message').value.trim();
   if (!message) {
     el('commit-message').focus();
-    uiText(el('staging-message'), msg('Enter a commit message.'));
+    showActionMessage(msg('Enter a commit message.'));
     return;
   }
   if (kind === 'commit') return performAction('git_commit', { action: 'commit', message }, 'Commit staged');

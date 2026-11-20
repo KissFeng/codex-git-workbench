@@ -9,6 +9,8 @@ const operations = () => import('./git-operations.mjs');
 const staging = () => import('./git-staging.mjs');
 const patch = () => import('./git-patch.mjs');
 const commit = () => import('./git-commit.mjs');
+const desktop = () => import('./desktop-actions.mjs');
+const optionalRepoPath = new Set(['git_operation', 'desktop_pick_checkout']);
 
 const operationActions = [
   'init', 'clone', 'createBranch', 'switchBranch', 'checkoutDetached', 'renameBranch', 'deleteBranch',
@@ -52,6 +54,10 @@ const definitions = [
     path: string, content: string, choice: choices('ours', 'theirs', 'base', 'current', 'delete', 'edit'),
   }, ['action'], true, true],
   ['git_conflict', 'Read the versions of a conflicted file', operations, 'gitOperation', { path: string }, ['path']],
+  ['desktop_pick_checkout', 'Choose a Git working copy', desktop, 'pickCheckout', { path: string, language: choices('en', 'zh-CN') }],
+  ['desktop_file_action', 'Open a working copy file or its folder', desktop, 'openCheckoutItem', {
+    path: string, action: choices('open', 'folder'),
+  }, ['path', 'action']],
 ];
 
 export const workbenchTools = definitions.map(([name, title, , , properties, required = [], writes = false, network = false]) => ({
@@ -60,10 +66,13 @@ export const workbenchTools = definitions.map(([name, title, , , properties, req
   description: title + '.',
   inputSchema: {
     type: 'object', properties: { repoPath: string, ...properties },
-    required: name === 'git_operation' ? required : ['repoPath', ...required],
+    required: optionalRepoPath.has(name) ? required : ['repoPath', ...required],
     additionalProperties: false,
   },
-  annotations: { readOnlyHint: !writes, destructiveHint: writes, idempotentHint: !writes, openWorldHint: network },
+  annotations: {
+    readOnlyHint: !writes && !name.startsWith('desktop_'), destructiveHint: writes,
+    idempotentHint: !writes && !name.startsWith('desktop_'), openWorldHint: network,
+  },
   _meta: { ui: { visibility: ['app'] } },
 }));
 

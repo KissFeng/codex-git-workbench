@@ -53,7 +53,6 @@
   text-align: left;
 }
 .sc-history-item > button:hover { background: transparent; }
-.sc-history-item > button:focus-visible, .sc-history-files button:focus-visible { outline-offset: -2px; }
 .sc-history-subject, .sc-history-file-path {
   flex: 1;
   min-width: 0;
@@ -127,7 +126,6 @@
 .sc-history-tooltip-deletions { color: light-dark(#a42538, #ff9eac); }
 .sc-history-tooltip-footer { display: flex; align-items: center; gap: 4px; margin-top: 2px; padding-top: 2px; border-top: 1px solid var(--border); }
 .sc-history-tooltip-copy { display: grid; place-items: center; width: 24px; height: 23px; padding: 0; border-radius: 4px; color: var(--muted); }
-.sc-history-tooltip-copy:focus-visible { outline-offset: -2px; }
 .sc-history-tooltip-copy svg { width: 13px; height: 13px; }
 .sc-history-tooltip-refs { display: flex; flex-wrap: wrap; gap: 3px; min-width: 0; }
 .sc-history-tooltip-refs .sc-ref { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
@@ -143,7 +141,7 @@
   border-radius: 5px;
   background: var(--bg);
 }
-.sc-history-reference-search:focus-within { border-color: var(--accent); }
+.sc-history-reference-search:focus-within { border-color: var(--focus-border); }
 .sc-history-reference-search .sc-input {
   flex: 1;
   min-width: 0;

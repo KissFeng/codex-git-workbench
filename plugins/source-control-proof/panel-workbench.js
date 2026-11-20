@@ -56,7 +56,7 @@ async function performAction(tool, args, label) {
   state.viewRequest++;
   state.statusRequest++;
   state.refreshEpoch = null;
-  uiText(el('staging-message'), msg('{action}…', { action }));
+  showActionMessage(msg('{action}…', { action }), { pending: true });
   updateCommitButton();
   renderHistoryStatus();
   renderFiles();
@@ -70,14 +70,16 @@ async function performAction(tool, args, label) {
       }
       return true;
     }
-    if (result.checkout && result.checkout !== checkout) {
+    const completedEpoch = result.checkout && result.checkout !== checkout ? epoch + 1 : epoch;
+    if (completedEpoch !== epoch) {
       await switchCheckout(result.checkout);
     } else {
       const status = result.status?.checkout ? result.status : result.staged ? result : null;
       if (status) renderStatus(status);
-      uiText(el('staging-message'), result.message || msg('{action} completed', { action }));
-      if (result.message || result.output) workbench.output = result.output || result.message;
     }
+    if (completedEpoch !== state.epoch) return true;
+    showActionMessage(msg('{action} completed', { action }));
+    if (result.message || result.output) workbench.output = result.output || result.message;
     if (tool === 'git_commit' && el('commit-message').value === submittedDraft) {
       if (args.action === 'undoCommit') el('commit-message').value = result.undoneMessage || el('commit-message').value;
       else {
@@ -90,7 +92,7 @@ async function performAction(tool, args, label) {
     if (epoch === state.epoch) {
       workbench.output = error.message;
       showError(error.message);
-      uiText(el('staging-message'), msg('{action} failed', { action }));
+      showActionMessage(msg('{action} failed', { action }));
     }
   } finally {
     if (workbench.busy === token) workbench.busy = null;
@@ -106,7 +108,7 @@ async function performAction(tool, args, label) {
   return success;
 }
 
-function selectWorkingFile(file, group) {
+function selectWorkingFile(file, group, { revealPreview = true } = {}) {
   state.selection = { path: file.path, group };
   resetPreview();
   const files = el('files');
@@ -119,9 +121,11 @@ function selectWorkingFile(file, group) {
   if (selected) selected.parentElement.dataset.selected = 'true';
   clearCode(msg('Loading file…'));
   el('code').scrollTop = 0;
-  if (group === 'conflicts') openConflict();
-  else loadFile();
-  showPreview();
+  if (group === 'conflicts') openConflict({ revealPreview });
+  else {
+    loadFile();
+    if (revealPreview) showPreview();
+  }
 }
 
 function fileTreeItems(files, group, makeFileRow) {
@@ -226,7 +230,7 @@ function renderSplit(view) {
   el('view-message').hidden = true;
 }
 
-function openDetail(title, subtitle, type) {
+function openDetail(title, subtitle, type, { revealPreview = true } = {}) {
   el('code').classList.remove('sc-detail-diff');
   const token = ++state.viewRequest;
   workbench.preview = type;
@@ -237,7 +241,7 @@ function openDetail(title, subtitle, type) {
   el('detail').replaceChildren();
   el('detail').hidden = true;
   clearCode(msg('Loading…'));
-  showPreview();
+  if (revealPreview) showPreview();
   return token;
 }
 
@@ -346,6 +350,16 @@ async function openBlame(path) {
   }
 }
 
+async function openWorkingItem(path, action) {
+  const epoch = state.epoch;
+  try {
+    await callTool('desktop_file_action', { repoPath: state.checkout, path, action });
+    if (epoch === state.epoch) showError();
+  } catch (error) {
+    if (epoch === state.epoch) showError(error.message);
+  }
+}
+
 function fileMenuEntries(selection) {
   if (!selection) return [];
   const epoch = state.epoch;
@@ -355,6 +369,8 @@ function fileMenuEntries(selection) {
   const staging = group === 'staged' ? 'Unstage' : 'Stage';
   const actions = [
     { label: 'Open Diff', run: () => { setMode('diff'); selectWorkingFile({ path }, group); } },
+    { label: 'Open file', run: () => openWorkingItem(path, 'open') },
+    { label: 'Open containing folder', run: () => openWorkingItem(path, 'folder') },
     { label: staging, disabled: !!state.staging || !!workbench.busy, run: () => changeStaging(path, group) },
     { separator: true },
     { label: 'File history', disabled: group === 'untracked', run: () => filterHistory(null, historyPath) },
@@ -475,10 +491,10 @@ async function openPatch(path, group) {
   }
 }
 
-async function openConflict() {
+async function openConflict({ revealPreview = true } = {}) {
   const path = state.selection?.path;
   if (!path) return;
-  const token = openDetail(path, msg('Resolve conflict'), 'conflict');
+  const token = openDetail(path, msg('Resolve conflict'), 'conflict', { revealPreview });
   el('file-view-modes').hidden = false;
   try {
     const versions = await callTool('git_conflict', { repoPath: state.checkout, path });
