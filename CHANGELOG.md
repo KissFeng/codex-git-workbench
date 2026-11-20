@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.0-preview.1
+
+- Add the Git Workbench panel with repository and worktree selection, compact file and tree views, split Diff, commit controls and an interactive commit graph.
+- Support staged-only, all-file, amended and empty commits plus undo, and stage or revert exact text selections.
+- Add branch, remote, stash, worktree and conflict workflows with temporary-repository and MCP tests.
+
 ## 0.5.1 beta — 2026-10-13
 
 - Show one clickable repository picker before selection; branch details appear after a repository loads.

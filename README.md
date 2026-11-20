@@ -1,114 +1,45 @@
-# Source Control for Codex
+# Git Workbench for Codex
 
-[![Tests](https://github.com/saltnpixels/codex-source-control/actions/workflows/test.yml/badge.svg)](https://github.com/saltnpixels/codex-source-control/actions/workflows/test.yml)
-[![MIT license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-
-See what changed in your local Git repositories while you work in Codex desktop.
-
-**Public beta · v0.5.1**
-
-Source Control adds a panel with your current branch, changed files, source and diff views, image previews, and per-file staging controls. It reads Codex's saved projects automatically, including projects with multiple repositories.
-
-![Source Control in Codex desktop showing changed files, staging controls, and an HTML diff](docs/source-control.jpg)
-
-## Features
-
-- Search projects, repository roots, and current worktree branches.
-- See staged, unstaged, untracked, and conflicted files in separate groups.
-- Click a file to view its source or unified diff with line numbers.
-- Preview images with pixel dimensions and file size; compare before/after snapshots.
-- Use **+** to stage a file and **−** to unstage it. Working-copy contents are preserved.
-- Switch repositories without asking the agent to run Git commands.
+Git Workbench manages local Git checkouts from a Codex desktop panel. It is based on [Source Control for Codex v0.5.1](https://github.com/saltnpixels/codex-source-control/tree/v0.5.1). The new marketplace and plugin identifiers allow the original installation to coexist.
 
 ## Install
 
-You need **Codex desktop with local MCP Apps support**, **Git**, and **Node.js 24+** available on PATH. There are no npm dependencies to install.
+Use Codex desktop with local MCP Apps, Git 2.35 or later and Node.js 24 or later on PATH. The plugin uses the system Git and has no npm dependencies.
+
+From an authenticated checkout of this repository:
 
 ```sh
-codex plugin marketplace add saltnpixels/codex-source-control
-codex plugin add source-control-proof@eric-source-control-proof
+codex plugin marketplace add "$PWD"
+codex plugin add codex-git-workbench@kissfeng-git-tools
 ```
 
-Restart Codex, then open **Source Control** from the panel picker and pin it for easy access. The marketplace is named **Source Control for Codex**. If “Try it now” opens a chat, use the panel picker to open the app.
+Open **Git Workbench** from the panel picker. Reopen Codex if the new panel or version does not appear. To update or roll back, check out the desired Git tag in the marketplace checkout, rerun the install command and reopen the panel.
 
-The `source-control-proof@eric-source-control-proof` identifier is retained from the original proof so existing installs remain compatible.
+## Workflows
 
-This repository is a GitHub-backed marketplace. It is not a listing in OpenAI's official public plugin directory.
+| Area | Panel capabilities |
+| --- | --- |
+| Repositories | Discover saved Codex projects and linked worktrees. Open an absolute checkout path, initialize a repository or clone with optional submodules. |
+| Changes | Browse changes as a list or tree. Open source, unified or split Diff, and image snapshots. Stage or unstage individual files, groups, text hunks and selected lines. Discard selected text or tracked changes, remove confirmed untracked files, ignore files, rename or delete files. |
+| Commits | Commit staged files with Cmd/Ctrl+Enter, commit all, amend, create empty commits and undo an unpublished commit. The options dialog supports signing and explicitly skipping hooks. |
+| History | Inspect current and upstream commits, fork and merge edges, reference labels and divergence. View commit messages and changed files, compare refs or the working copy, follow file history and inspect line attribution. |
+| Branches and remotes | Switch local or tracked remote branches, check out detached revisions, manage branches and tags, add or remove remotes, fetch, pull, push, publish an upstream and sync. Sync defaults to fast-forward only. Force-push requires a lease for the previously selected remote tip. |
+| Conflicts and worktrees | Inspect base, ours, theirs and working content. Edit and stage eligible results or choose a version. Continue or abort merge, rebase and cherry-pick; create, view, apply, pop and drop stashes; manage worktrees and transfer pending changes. |
 
-### Install a pinned version
+Git hooks, credentials, signing and remote configuration come from the local Git installation. A failed sync stops before push. Disk-changing, history-rewriting and remote writes that need confirmation show their target in the panel.
 
-```sh
-codex plugin marketplace add saltnpixels/codex-source-control --ref v0.5.1
-codex plugin add source-control-proof@eric-source-control-proof
-```
+Use whole-file actions for binary files, symbolic links, renames and permission changes. File and image previews have size limits. Editor-specific Git actions such as file history, blame and merge resolution are available inside the panel. Commit message generation, GitHub sign-in and pull-request management are separate integrations.
 
-### Update
+## Design and development
 
-If you installed from the default branch:
-
-```sh
-codex plugin marketplace upgrade eric-source-control-proof
-codex plugin add source-control-proof@eric-source-control-proof
-```
-
-Restart Codex and reopen the panel to replace the running MCP process. A marketplace pinned to a release tag stays on that release.
-
-### Remove
-
-```sh
-codex plugin remove source-control-proof@eric-source-control-proof
-codex plugin marketplace remove eric-source-control-proof
-```
-
-## Use
-
-The first opening shows a repository picker. Choose a repository, or use **Open another checkout…** for an absolute checkout path. A remembered checkout or an explicit tool argument can also select the repository; the global panel does not automatically follow the active chat's project.
-
-Click a changed file, then choose **Diff** or **Source**. Under Staged Changes, Source shows the index snapshot. Other groups show the working copy. Diff compares HEAD against the index for staged changes, and the index against the working copy for unstaged changes.
-
-**New** means Git has not tracked the file yet. Staging applies to a whole file; individual hunk staging is not included. The panel does not commit, push, switch branches, or discard working files.
-
-The repository picker refreshes on opening, on **Refresh**, and every 30 seconds while visible. Git status refreshes every five seconds while visible. Additional worktrees are collapsed until expanded or matched by search.
-
-## Compatibility
-
-The native proof was verified on macOS. Updated viewer, image, staging, and discovery behavior was tested with the actual backend in a browser harness and isolated Git fixtures. Automated Git fixture tests run on macOS and Linux. Windows and native installation on other machines have not yet been verified.
-
-Project discovery uses a **read-only adapter for Codex's internal local storage**. It derives the data directory from `CODEX_HOME`, or the current user's `.codex` directory. It queries project names and repository roots from the local state database; older installations can use their saved workspace JSON. Codex storage changes may require an adapter update. If discovery is unavailable, the panel explains the failure and lets you enter a checkout path.
-
-The plugin uses a supported Codex compatibility manifest and a local stdio MCP server. Node runs the installed server using plugin-relative paths. There is no copied project list, personal checkout path, or default repository in the package.
-
-## Data and permissions
-
-The plugin reads local project paths, Git status, and selected file contents. It does not implement analytics, upload files, or contact an external service. Preview data stays between the local MCP server and Codex's panel. Status tools can also return branch and changed-file metadata to the agent when invoked. File and staging tools are app-only.
-
-The staging tool writes the selected file's Git index entries. Requests are serialized per checkout and checked against fresh status. Other index entries and working-copy files are preserved. This is a trusted local integration; app-only tool visibility is not an operating-system filesystem sandbox.
-
-Git read commands use `--no-optional-locks`; diffs disable external diff commands and text conversion. Text views are limited to 512 KB and 10,000 displayed lines. Image snapshots are limited to 8 MB. Working-copy image symlinks are not followed. Unsupported binary files, submodules, oversized files, and missing snapshots display messages.
-
-## Development
-
-Clone the repository and run:
+The Git workflow reference is the [VS Code built-in Git extension](https://github.com/microsoft/vscode/tree/748f712f3050ae8f29d8af75ad560d7a88ac3322/extensions/git). The Codex interface uses the host's light and dark schemes. Its JavaScript frontend talks to a local stdio MCP service. File, history and Git mutation tools are panel-only. Git commands execute in the selected checkout and plugin writes are queued by the common Git directory across linked worktrees.
 
 ```sh
 npm test
 ```
 
-No npm install is needed. Tests create temporary repositories and a temporary Codex catalog. They cover live multi-root discovery, external catalog changes, empty/unavailable catalogs, portable launch from a relocated folder, partial staging, renames, literal paths, detached/unborn HEAD, unrelated index entries, concurrent requests, source/diff separation, image snapshots, size limits, and path validation. They do not stage files in your real repositories.
-
-The implementation lives under `plugins/source-control-proof/`:
-
-- `codex-projects.mjs`: read-only Codex catalog compatibility adapter.
-- `projects.mjs`: project roots and live Git worktrees.
-- `git-status.mjs`, `git-file.mjs`, `git-images.mjs`, `git-staging.mjs`: Git data and per-file actions.
-- `server.mjs`: stdio MCP transport and assembled panel resource.
-- `panel.html`, `panel.css`, `panel.js`: responsive panel and MCP Apps bridge.
-- `assets/branch.svg`: transparent outline icon.
-
-## Feedback and contributing
-
-[Open an issue](https://github.com/saltnpixels/codex-source-control/issues) with your OS, Codex version, Node version, and what happened. Please remove private repository paths, source contents, and credentials from logs or screenshots. Small fixes and improvements are welcome.
+The Node test suite creates disposable local repositories and bare remotes. It covers staging and commits, conflicts and remotes, graph and path handling, Codex project discovery, and the packaged MCP resource. CI runs on macOS and Linux.
 
 ## License
 
-[MIT](LICENSE) · Eric Greenfield
+[MIT](LICENSE). The upstream license and Git history are preserved.

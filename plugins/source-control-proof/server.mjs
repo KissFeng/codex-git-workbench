@@ -7,13 +7,15 @@ import { listProjects } from './projects.mjs';
 import { updateStaging } from './git-staging.mjs';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
+import { workbenchTools, callWorkbenchTool } from './git-tools.mjs';
 
-const uri = 'ui://source-control-proof/panel-v6.html';
+const uri = 'ui://source-control-proof/panel-v7.html';
+const manifest = JSON.parse(await readFile(new URL('./.codex-plugin/plugin.json', import.meta.url), 'utf8'));
 const icon = { src: 'data:image/svg+xml;base64,' + (await readFile(new URL('./assets/branch.svg', import.meta.url))).toString('base64'), mimeType: 'image/svg+xml', sizes: ['any'] };
 const inputSchema = { type: 'object', properties: { repoPath: { type: 'string', description: 'Absolute checkout path. Opening the panel without one lets you choose from Codex projects.' } }, additionalProperties: false };
 const annotations = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
 const tools = [
-  { name: 'source_control_panel', title: 'Source Control', icons: [icon], description: 'Open local Source Control with project switching, changed files, image/source/diff views, and per-file staging controls.', inputSchema, annotations,
+  { name: 'source_control_panel', title: 'Git Workbench', icons: [icon], description: 'Open the local Git workbench with repository selection, changes, commits and history.', inputSchema, annotations,
     _meta: { ui: { resourceUri: uri }, 'openai/ui': { entrypoints: [{ type: 'thread' }, { type: 'global' }] } } },
   { name: 'git_status', title: 'Refresh Git status', description: 'Read actual local Git status for the displayed checkout.', inputSchema, annotations,
     _meta: { ui: { visibility: ['app', 'model'] } } },
@@ -30,22 +32,23 @@ const tools = [
       required: ['repoPath', 'path', 'group', 'action'], additionalProperties: false },
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     _meta: { ui: { visibility: ['app'] } } },
+  ...workbenchTools,
 ];
 
 export async function panelHtml() {
-  const [html, css, js] = await Promise.all(['panel.html', 'panel.css', 'panel.js'].map(file => readFile(new URL('./' + file, import.meta.url), 'utf8')));
-  return html.replace('/* PANEL_CSS */', css).replace('/* PANEL_JS */', () => js);
+  const [html, css, ...scripts] = await Promise.all(['panel.html', 'panel.css', 'panel-model.mjs', 'panel-actions.js', 'panel-workbench.js', 'panel.js'].map(file => readFile(new URL('./' + file, import.meta.url), 'utf8')));
+  return html.replace('/* PANEL_CSS */', css).replace('/* PANEL_JS */', () => scripts.join('\n').replace('/* APP_VERSION */', manifest.version));
 }
 export async function handle(method, params = {}) {
   switch (method) {
-    case 'initialize': return { protocolVersion: '2025-11-25', capabilities: { tools: {}, resources: {} }, serverInfo: { name: 'source-control-proof', version: '0.5.1', icons: [icon] } };
+    case 'initialize': return { protocolVersion: '2025-11-25', capabilities: { tools: {}, resources: {} }, serverInfo: { name: manifest.name, version: manifest.version, icons: [icon] } };
     case 'ping': return {};
     case 'tools/list': return { tools };
     case 'resources/list': return { resources: [{ uri, name: 'source-control-panel', mimeType: 'text/html;profile=mcp-app' }] };
     case 'resources/templates/list': return { resourceTemplates: [] };
     case 'prompts/list': return { prompts: [] };
     case 'resources/read': {
-      if (![uri, 'ui://source-control-proof/panel-v1.html', 'ui://source-control-proof/panel-v2.html', 'ui://source-control-proof/panel-v3.html', 'ui://source-control-proof/panel-v4.html', 'ui://source-control-proof/panel-v5.html'].includes(params.uri)) throw new Error('Unknown resource');
+      if (![uri, 'ui://source-control-proof/panel-v1.html', 'ui://source-control-proof/panel-v2.html', 'ui://source-control-proof/panel-v3.html', 'ui://source-control-proof/panel-v4.html', 'ui://source-control-proof/panel-v5.html', 'ui://source-control-proof/panel-v6.html'].includes(params.uri)) throw new Error('Unknown resource');
       return { contents: [{ uri: params.uri, mimeType: 'text/html;profile=mcp-app', text: await panelHtml(),
         _meta: { ui: { prefersBorder: false }, 'openai/ui': { preferredDisplayMode: 'fullscreen', availableDisplayModes: ['inline', 'fullscreen'] } } }] };
     }
@@ -53,6 +56,9 @@ export async function handle(method, params = {}) {
       if (!tools.some(tool => tool.name === params.name)) throw new Error('Unknown tool');
       const args = params.arguments || {};
       if (args.repoPath !== undefined && typeof args.repoPath !== 'string') throw new Error('repoPath must be a string');
+      if (workbenchTools.some(tool => tool.name === params.name)) {
+        return { content: [], structuredContent: await callWorkbenchTool(params.name, args) };
+      }
       if (params.name === 'git_projects') return { content: [], structuredContent: await listProjects() };
       if (params.name === 'git_file') return { content: [], structuredContent: await getFile(args) };
       if (params.name === 'git_staging') return { content: [], structuredContent: await updateStaging(args) };
@@ -76,6 +82,6 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: request.id, result }) + '\n');
   } catch (error) {
     if (request?.id !== undefined) process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: request.id,
-      error: { code: -32603, message: error.message } }) + '\n');
+      error: { code: -32603, message: String(error.stderr?.trim() || error.message).replace(/(https?:\/\/)[^/\s@]+@/g, '$1').slice(0, 4000) } }) + '\n');
   }
 });
