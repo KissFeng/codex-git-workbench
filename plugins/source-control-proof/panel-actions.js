@@ -13,6 +13,7 @@ function copyText(value) {
 }
 
 function openAction(title, content) {
+  closeWorkbenchOverlays();
   const dialog = el('action-dialog');
   el('action-title').textContent = title;
   el('action-body').replaceChildren(content);
@@ -23,6 +24,7 @@ function openAction(title, content) {
 const field = (key, label, options = {}) => ({ key, label, ...options });
 
 function actionForm(title, fields, onSubmit, { confirmation, submitLabel = title } = {}) {
+  const epoch = state.epoch;
   const form = element('form', 'sc-action-form');
   const controls = new Map();
   for (const definition of fields) {
@@ -71,7 +73,7 @@ function actionForm(title, fields, onSubmit, { confirmation, submitLabel = title
       else if (input.value.trim()) values[key] = input.value.trim();
     }
     el('action-dialog').close();
-    onSubmit(values, !!confirmation);
+    if (epoch === state.epoch) onSubmit(values, !!confirmation);
   };
   openAction(title, form);
 }
@@ -87,6 +89,10 @@ function commandList(title, choices) {
     list.append(button);
   }
   openAction(title, list);
+}
+
+function actionAnchor(trigger) {
+  return trigger?.currentTarget ?? (trigger?.isConnected ? trigger : null);
 }
 
 async function readReferences() {
@@ -132,7 +138,8 @@ function runCommand(action, preset = {}, fields = []) {
   actionForm(label, fields, submit, { confirmation });
 }
 
-function showCommitOptions() {
+function showCommitOptions(trigger, event = trigger?.currentTarget ? trigger : null) {
+  const anchor = actionAnchor(trigger);
   const selected = [
     { action: 'commit', label: 'Commit staged with options' },
     { action: 'commitAll', label: 'Commit all changes' },
@@ -142,7 +149,7 @@ function showCommitOptions() {
   ];
   const options = selected.map(({ action, label }) => ({
     label,
-    disabled: !state.status || !!workbench.busy,
+    disabled: !state.status || !!workbench.busy || !!state.staging,
     run: () => actionForm(label, action === 'undoCommit' ? [] : [
       field('message', 'Commit message', { value: el('commit-message').value, optional: action === 'amend', multiline: true }),
       field('signed', 'Cryptographically sign commit', { checkbox: true }),
@@ -153,7 +160,14 @@ function showCommitOptions() {
     { confirmation: ['amend', 'undoCommit', 'commitAll'].includes(action) ? label + ' on ' + state.status.branch : '' }),
   }));
   options.push({ label: 'Restore commit template…', disabled: !state.checkout, run: restoreCommitTemplate });
-  commandList('Commit options', options);
+  if (state.status?.hasRemote && !state.status.detached && state.status.head && !state.status.operation) {
+    options.push({ separator: true });
+    options.push(state.status.upstream
+      ? { label: 'Sync Changes…', run: source => showSynchronization(source, state.status) }
+      : { label: 'Publish Branch…', run: choosePublishRemote });
+  }
+  if (anchor) openContextMenu(options, { anchor, event, label: 'Commit and sync options' });
+  else commandList('Commit options', options);
 }
 
 async function restoreCommitTemplate() {
@@ -179,33 +193,171 @@ async function restoreCommitTemplate() {
   }
 }
 
-async function chooseBranch() {
-  const refs = await readReferences();
-  if (!refs) return;
-  const choices = [
-    ...refs.branches.map(item => ({
-      label: item.name + (item.current ? ' · current' : ''),
-      disabled: item.current,
-      run: () => runCommand('switchBranch', { name: item.name }),
-    })),
-    ...refs.remoteBranches.filter(item => item.remote && item.branch).map(item => ({
-      label: item.name + ' · remote',
-      run: () => runCommand('switchBranch', { name: item.branch, remote: item.remote }),
-    })),
-    ...refs.tags.map(item => ({ label: item.name + ' · tag', run: () => runCommand('checkoutDetached', { ref: item.ref }) })),
-  ];
-  choices.unshift({ label: 'Create branch…', run: () => runCommand('createBranch', {}, [field('name', 'Branch name'), field('startPoint', 'Start from', { optional: true }), field('checkout', 'Switch to this branch', { checkbox: true, value: true })]) });
-  commandList('Switch branch', choices);
+function createBranchFields() {
+  return [field('name', 'Branch name'), field('startPoint', 'Start from', { optional: true }),
+    field('checkout', 'Switch to this branch', { checkbox: true, value: true })];
 }
 
-async function chooseReference() {
+function branchGroups(refs) {
+  return [
+    { label: 'Local branches', entries: refs.branches.map(item => ({
+      label: item.name, disabled: item.current,
+      run: () => runCommand('switchBranch', { name: item.name }),
+    })) },
+    { label: 'Remote branches', entries: refs.remoteBranches.filter(item => item.remote && item.branch).map(item => ({
+      label: item.name, run: () => runCommand('switchBranch', { name: item.branch, remote: item.remote }),
+    })) },
+    { label: 'Tags', entries: refs.tags.map(item => ({
+      label: item.name, run: () => runCommand('checkoutDetached', { ref: item.ref }),
+    })) },
+  ];
+}
+
+function filterBranchGroups(groups, query) {
+  const term = query.trim().toLowerCase();
+  return groups.map(group => ({
+    ...group, entries: group.entries.filter(entry => entry.label.toLowerCase().includes(term)),
+  })).filter(group => group.entries.length);
+}
+
+async function chooseBranch(trigger) {
+  if (!state.checkout || workbench.busy || state.staging) return;
+  const epoch = state.epoch;
+  const anchor = actionAnchor(trigger);
+  const picker = element('div', 'sc-branch-picker');
+  const search = element('input');
+  search.placeholder = 'Search branches or tags…';
+  search.setAttribute('aria-label', 'Search branches or tags');
+  search.autocomplete = 'off';
+  search.spellcheck = false;
+  const searchRow = element('div', 'sc-search sc-branch-search');
+  searchRow.append(search, element('kbd', '', 'esc'));
+  const list = element('div', 'sc-branch-results');
+  const pending = element('p', 'sc-branch-result-message', 'Loading branches…');
+  pending.setAttribute('role', 'status');
+  list.append(pending);
+  picker.append(searchRow, list);
+
+  if (anchor) {
+    picker.setAttribute('role', 'dialog');
+    picker.setAttribute('aria-label', 'Switch branch');
+    if (!openWorkbenchPopup(picker, { anchor, initialFocus: search })) return;
+  } else openAction('Switch branch', picker);
+  const active = () => picker.isConnected && (anchor || el('action-dialog').open);
   const refs = await readReferences();
-  if (!refs) return;
-  commandList('History references', [
-    { label: 'Current branch and upstream', run: () => filterHistory(null, null) },
-    ...[...refs.branches, ...refs.remoteBranches, ...refs.tags].map(item => ({
-      label: item.name, run: () => filterHistory(item.ref, null),
-    })),
+  if (!active()) return;
+  if (!refs) {
+    pending.textContent = 'Unable to load branches.';
+    return;
+  }
+  const groups = branchGroups(refs);
+  const create = { label: 'Create branch…', run: () => runCommand('createBranch', {}, createBranchFields()) };
+  const render = () => {
+    list.replaceChildren();
+    const matches = filterBranchGroups(groups, search.value);
+    if (!search.value.trim()) matches.unshift({ entries: [create] });
+    if (!matches.length) {
+      const empty = element('p', 'sc-branch-result-message', 'No branches or tags match.');
+      empty.setAttribute('role', 'status');
+      list.append(empty);
+    }
+    for (const { label, entries } of matches) {
+      const section = element('div', 'sc-branch-group');
+      if (label) {
+        section.setAttribute('role', 'group');
+        section.setAttribute('aria-label', label);
+        section.append(element('div', 'sc-branch-group-heading', label));
+      }
+      for (const entry of entries) {
+        const button = control('', () => {
+          if (anchor) closeWorkbenchOverlays({ restoreFocus: true });
+          else el('action-dialog').close();
+          if (epoch === state.epoch && !workbench.busy && !state.staging) entry.run();
+        }, 'sc-menu-item sc-branch-entry');
+        button.disabled = !!entry.disabled;
+        button.append(element('span', '', entry.label));
+        if (entry.disabled) {
+          button.setAttribute('aria-current', 'true');
+          button.append(element('span', 'sc-muted', 'Current'));
+        }
+        section.append(button);
+      }
+      list.append(section);
+    }
+    if (anchor) positionWorkbenchOverlay(picker, anchor);
+  };
+  search.oninput = render;
+  picker.addEventListener('keydown', event => {
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End', 'Enter'].includes(event.key)) return;
+    const fromSearch = event.target === search;
+    if (fromSearch && ['Home', 'End'].includes(event.key)) return;
+    const buttons = [...list.querySelectorAll('button:not(:disabled)')];
+    if (fromSearch && event.key === 'Enter' && buttons.length) {
+      event.preventDefault();
+      buttons[0].click();
+      return;
+    }
+    const target = event.key === 'ArrowUp' && !fromSearch && event.target === buttons[0]
+      ? search
+      : workbenchMenuTarget(buttons, event.target, event.key);
+    if (target) {
+      event.preventDefault();
+      target.focus();
+    }
+  });
+  render();
+}
+
+function repositoryMenuEntries(checkout, status) {
+  const path = typeof checkout === 'string' ? checkout : checkout?.path;
+  if (!path) return [];
+  const epoch = state.epoch;
+  const selected = path === state.checkout;
+  const busy = !!workbench.busy || !!state.staging;
+  const stillSelected = () => epoch === state.epoch && path === state.checkout && !workbench.busy && !state.staging;
+  const guarded = action => anchor => { if (stillSelected()) action(anchor); };
+  const copy = { label: 'Copy checkout path', run: () => copyText(path) };
+  if (!selected) {
+    return [
+      { label: 'Switch to checkout', run: () => { if (epoch === state.epoch) switchCheckout(path); } },
+      copy,
+      { label: 'Git actions…', disabled: busy, run: async () => {
+        if (workbench.busy || state.staging || epoch !== state.epoch) return;
+        await switchCheckout(path);
+        if (path === state.checkout && state.epoch === epoch + 1) await showCommands();
+      } },
+    ];
+  }
+  const canContactRemote = !!status && status.hasRemote !== false;
+  const attached = canContactRemote && !!status.head && !status.detached && !status.operation;
+  const tracking = attached && !!status.upstream;
+  return [
+    { label: 'Switch branch…', disabled: busy || !status, run: guarded(chooseBranch) },
+    { separator: true },
+    { label: 'Fetch', disabled: busy || !canContactRemote, run: guarded(() => runCommand('fetch')) },
+    { label: 'Pull', disabled: busy || !tracking, run: guarded(() => runCommand('pull')) },
+    { label: attached && !tracking ? 'Publish Branch…' : 'Push', disabled: busy || !attached,
+      run: guarded(tracking ? () => runCommand('push') : choosePublishRemote) },
+    { label: 'Sync Changes', disabled: busy || !tracking, run: guarded(anchor => showSynchronization(anchor, state.status)) },
+    { separator: true },
+    { label: 'Refresh repository', disabled: busy, run: guarded(() => refresh({ force: true })) },
+    copy,
+    { label: 'Git actions…', disabled: busy, run: guarded(showCommands) },
+  ];
+}
+
+async function choosePublishRemote() {
+  const refs = await readReferences();
+  if (!refs || workbench.busy || state.staging) return;
+  const choices = refs.remotes.map(item => item.name);
+  if (!choices.length) {
+    showError('Add a Git remote before publishing the branch.');
+    return;
+  }
+  runCommand('publish', {}, [
+    field('remote', 'Remote', { choices, value: choices.length === 1 ? choices[0] : undefined }),
+    field('branch', 'Remote branch', { optional: true }),
+    field('followTags', 'Include reachable annotated tags', { checkbox: true }),
   ]);
 }
 
@@ -218,16 +370,24 @@ function compareForm() {
   ], args => openCompare(args), { submitLabel: 'Compare' });
 }
 
-async function showCommands() {
+async function showCommands(trigger, event = trigger?.currentTarget ? trigger : null) {
   if (workbench.busy || state.staging) return;
+  const anchor = actionAnchor(trigger);
+  let loading;
   const destination = () => field('destination', 'Absolute checkout path');
   const commands = [
     { label: actionNames.init, run: () => runCommand('init', {}, [destination()]) },
     { label: actionNames.clone, run: () => runCommand('clone', {}, [field('url', 'Repository URL'), destination(), field('recursive', 'Initialize submodules', { checkbox: true })]) },
   ];
   if (state.status) {
+    if (anchor) loading = openContextMenu([{ label: 'Loading Git actions…', disabled: true }],
+      { anchor, event, label: 'Git actions' });
     const refs = await readReferences();
-    if (!refs) return;
+    if (!refs || workbench.busy || state.staging) {
+      if (loading?.isConnected) closeWorkbenchOverlays({ restoreFocus: true });
+      return;
+    }
+    if (anchor && !loading?.isConnected) return;
     const remoteNames = refs.remotes.map(item => item.name);
     const branches = refs.branches.map(item => item.name);
     const localTags = refs.tags.map(item => item.name);
@@ -246,7 +406,7 @@ async function showCommands() {
       ...(['push', 'publish'].includes(action) ? [field('followTags', 'Include reachable annotated tags', { checkbox: true })] : []),
     ], {}, !remoteNames.length);
     commands.push({ label: 'Switch branch…', run: chooseBranch }, { label: 'Compare changes…', run: compareForm });
-    add('createBranch', [name('Branch name'), field('startPoint', 'Start from', { optional: true }), field('checkout', 'Switch to this branch', { checkbox: true, value: true })]);
+    add('createBranch', createBranchFields());
     add('checkoutDetached', [revision()]);
     add('renameBranch', [name('Branch', branches), field('newName', 'New name')], {}, !branches.length);
     add('deleteBranch', [name('Branch', branches), field('force', 'Allow deleting an unmerged branch', { checkbox: true })], {}, !branches.length);
@@ -305,5 +465,6 @@ async function showCommands() {
       showDetail(element('pre', 'sc-commit-text', workbench.output || el('diagnostics').textContent));
     } });
   }
-  commandList('Git actions', commands);
+  if (anchor) openContextMenu(commands, { anchor, event, label: 'Git actions' });
+  else commandList('Git actions', commands);
 }

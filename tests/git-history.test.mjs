@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { gitBlame, gitCompare, gitHistory, gitHistoryDetail } from '../plugins/source-control-proof/git-history.mjs';
+import { callWorkbenchTool } from '../plugins/source-control-proof/git-tools.mjs';
 
 async function repository(t) {
   const repoPath = await mkdtemp(join(tmpdir(), 'codex-git-history-'));
@@ -79,6 +80,82 @@ test('history continuation keeps its original start commits when HEAD advances',
   assert.equal(next.head, head);
   assert.deepEqual([...first.commits, ...next.commits, ...last.commits].map(commit => commit.id), full.commits.map(commit => commit.id));
   assert.equal((await gitHistory({ repoPath })).head, newHead);
+});
+
+test('all history includes unmerged local, remote and tag tips with full references', async t => {
+  const { repoPath, git, commit, base, head, remote } = await fork(t);
+  git('switch', '-c', 'topic', base);
+  const topic = await commit('topic.txt', 'topic\n', 'Topic');
+  git('switch', '--detach', base);
+  const remoteOnly = await commit('remote-only.txt', 'remote-only\n', 'Remote only');
+  git('update-ref', 'refs/remotes/origin/topic', remoteOnly);
+  const tagged = await commit('tag.txt', 'tag\n', 'Only tag points here');
+  git('tag', '-a', 'tagged', '-m', 'Tagged', tagged);
+  git('tag', '-a', 'nested', '-m', 'Nested', 'tagged');
+  git('tag', 'blob', 'HEAD:tag.txt');
+  git('switch', 'main');
+
+  const auto = await gitHistory({ repoPath, scope: 'auto' });
+  const all = await callWorkbenchTool('git_history', { repoPath, scope: 'all' });
+  assert.deepEqual([all.head, all.upstream, all.base, all.ahead, all.behind], [head, remote, base, 3, 1]);
+  assert.deepEqual(new Set(all.commits.map(({ id }) => id)), new Set([...auto.commits.map(({ id }) => id), topic, remoteOnly, tagged]));
+  const commits = new Map(all.commits.map(item => [item.id, item]));
+  for (const id of [topic, remoteOnly, tagged]) assert.equal(commits.get(id).relation, 'other');
+  assert.deepEqual(commits.get(topic).refs, [{ name: 'topic', kind: 'branch', ref: 'refs/heads/topic' }]);
+  assert.deepEqual(commits.get(remoteOnly).refs, [{ name: 'origin/topic', kind: 'remote', ref: 'refs/remotes/origin/topic' }]);
+  assert.deepEqual(commits.get(tagged).refs.map(({ ref }) => ref), ['refs/tags/nested', 'refs/tags/tagged']);
+  assert(commits.get(head).refs.some(ref => ref.kind === 'head' && ref.ref === 'HEAD'));
+});
+
+test('all history includes a detached HEAD with no named reference', async t => {
+  const { repoPath, git, commit, base, head } = await fork(t);
+  git('switch', '--detach', base);
+  const detached = await commit('detached.txt', 'detached\n', 'Detached');
+  const all = await gitHistory({ repoPath, scope: 'all' });
+  const commits = new Map(all.commits.map(item => [item.id, item]));
+  assert.equal(all.head, detached);
+  assert.equal(all.upstream, null);
+  assert.equal(commits.get(detached).relation, 'local');
+  assert.equal(commits.get(head).relation, 'other');
+});
+
+test('history selection combines full refs while retaining current branch divergence', async t => {
+  const { repoPath, git, base, side, remote, head } = await fork(t);
+  const refs = ['refs/heads/side', 'refs/remotes/origin/main', 'refs/tags/v1'];
+  const result = await callWorkbenchTool('git_history', { repoPath, scope: 'all', refs });
+  assert.deepEqual(new Set(result.commits.map(({ id }) => id)), new Set([side, remote, base]));
+  assert.deepEqual([result.head, result.upstream, result.base, result.ahead, result.behind], [head, remote, base, 3, 1]);
+  assert.equal(result.commits.find(({ id }) => id === side).relation, 'ahead');
+
+  const first = await gitHistory({ repoPath, scope: 'all', refs, limit: 1 });
+  git('branch', '-f', 'side', remote);
+  const next = await gitHistory({ repoPath, scope: 'all', refs: [...refs].reverse(), cursor: first.cursor });
+  assert.deepEqual([...first.commits, ...next.commits], result.commits);
+
+  await assert.rejects(gitHistory({ repoPath, scope: 'branch' }), /scope/i);
+  await assert.rejects(gitHistory({ repoPath, refs: ['side'] }), /reference/i);
+  await assert.rejects(gitHistory({ repoPath, refs: ['refs/heads/main^'] }), /reference/i);
+  await assert.rejects(gitHistory({ repoPath, refs: ['refs/heads/missing'] }), /reference/i);
+});
+
+test('all history continuation freezes reference tips and labels across changes', async t => {
+  const { repoPath, git, commit, head } = await fork(t);
+  git('switch', '-c', 'topic');
+  const topic = await commit('topic.txt', 'topic\n', 'Topic');
+  git('switch', 'main');
+  const full = await gitHistory({ repoPath, scope: 'all' });
+  const first = await gitHistory({ repoPath, scope: 'all', limit: 1 });
+  git('branch', '-f', 'topic', head);
+  git('branch', 'new', topic);
+  git('tag', '-f', 'v1', head);
+  await commit('after.txt', 'new\n', 'After page one');
+
+  const next = await gitHistory({ repoPath, scope: 'all', cursor: first.cursor });
+  assert.deepEqual([...first.commits, ...next.commits], full.commits);
+  assert.equal(next.head, head);
+  assert.equal(next.cursor, null);
+  await assert.rejects(gitHistory({ repoPath, scope: 'auto', cursor: first.cursor }), /cursor/i);
+  await assert.rejects(gitHistory({ repoPath, scope: 'all', refs: ['refs/heads/topic'], cursor: first.cursor }), /cursor/i);
 });
 
 test('file history takes a branch and a literal checkout-relative path', async t => {

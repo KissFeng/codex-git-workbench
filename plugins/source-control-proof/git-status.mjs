@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
-import { isAbsolute } from 'node:path';
+import { stat } from 'node:fs/promises';
+import { isAbsolute, join } from 'node:path';
 
 const repositoryEnvironment = [
   'GIT_DIR', 'GIT_COMMON_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE',
@@ -95,10 +96,36 @@ function parseBranchStatus(output) {
   return { ...branchInfo, ...groups };
 }
 
+async function operationType(checkout) {
+  const gitDir = (await git(checkout, 'rev-parse', '--absolute-git-dir')).replace(/\r?\n$/, '');
+  const markers = [
+    ['rebase-merge', 'rebase'], ['rebase-apply', 'rebase'], ['MERGE_HEAD', 'merge'],
+    ['CHERRY_PICK_HEAD', 'cherryPick'], ['sequencer/todo', 'cherryPick'],
+  ];
+  const types = await Promise.all(markers.map(async ([file, type]) => {
+    try {
+      await stat(join(gitDir, file));
+      return type;
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+      return null;
+    }
+  }));
+  return types.find(Boolean) ?? null;
+}
+
 export async function getStatus(repoPath) {
   const launchDirectory = process.cwd();
   const contextSource = repoPath ? 'explicit checkout' : 'server launch directory';
   const checkout = await checkoutRoot(repoPath || launchDirectory);
-  const status = await git(checkout, 'status', '--porcelain=v2', '--branch', '-z', '--untracked-files=all');
-  return { checkout, contextSource, launchDirectory, checkedAt: new Date().toISOString(), ...parseBranchStatus(status) };
+  const [status, operation, remotes] = await Promise.all([
+    git(checkout, 'status', '--porcelain=v2', '--branch', '-z', '--untracked-files=all'),
+    operationType(checkout),
+    git(checkout, 'remote'),
+  ]);
+  const branch = parseBranchStatus(status);
+  return {
+    checkout, contextSource, launchDirectory, checkedAt: new Date().toISOString(), ...branch,
+    operation: operation ?? (branch.conflicts.length ? 'conflict' : null), hasRemote: Boolean(remotes.trim()),
+  };
 }

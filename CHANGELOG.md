@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.0
+
+- Show Repositories, Changes and Graph together, with a resizable divider and independent scroll areas.
+- Add checkout, file and commit row actions, hover details, searchable branches and context menus that work from the keyboard.
+- Show the appropriate commit, sync, publish or conflict action. Return from narrow previews to the originating row.
+- Add all-reference history, grouped reference filters, incoming and outgoing comparisons, and inline commit file lists.
+
 ## 0.6.0
 
 - Add Git sign-off trailers, all-file amend and restoring the configured commit template.

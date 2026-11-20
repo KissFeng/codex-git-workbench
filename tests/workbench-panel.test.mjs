@@ -1,17 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-test('panel helpers build graph edges, aligned diff rows and a literal path tree', async () => {
-  const { graphRows, diffRows, buildFileTree } = await import('../plugins/source-control-proof/panel-model.mjs');
-  const graph = graphRows([
-    { id: 'merge', parents: ['main', 'topic'] },
-    { id: 'main', parents: ['root'] },
-    { id: 'topic', parents: ['root'] },
-    { id: 'root', parents: [] },
-  ]);
-  assert.deepEqual(graph[0].edges.map(({ from, to }) => [from, to]), [[0, 0], [0, 1]]);
-  assert.equal(graph[2].edges.find(edge => edge.from === 1).to, 0);
-  assert.deepEqual(graph[3].edges, []);
+test('panel helpers build aligned diff rows and a literal path tree', async () => {
+  const { diffRows, buildFileTree } = await import('../plugins/source-control-proof/panel-model.mjs');
   const rows = diffRows('@@ -2,2 +2,3 @@\n-old\n+new\n+extra\n same\n');
   assert.deepEqual(rows.map(({ old, next }) => [old?.number, next?.number]), [
     [undefined, undefined], [2, 2], [undefined, 3], [3, 4],
@@ -83,4 +74,70 @@ test('MCP panel tools stage selected new lines, commit the index and read the sa
   const detail = await tool('git_history_detail', { commit: result.head, path: file.path });
   assert.match(detail.diff, /\+selected/);
   assert.doesNotMatch(detail.diff, /kept in working copy/);
+});
+
+test('SCM primary action distinguishes staged, unstaged, conflicts, and tracking', async () => {
+  const { scmPrimaryAction } = await import('../plugins/source-control-proof/panel-model.mjs');
+  const clean = {
+    head: 'abcdef', branch: 'main', upstream: 'origin/main', hasRemote: true, detached: false,
+    ahead: 0, behind: 0, operation: null, staged: [], unstaged: [], untracked: [], conflicts: [],
+  };
+  const paths = [{ path: 'one.txt' }];
+  assert.deepEqual(scmPrimaryAction({ ...clean, ahead: 1 }), { kind: 'sync', label: 'Sync Changes ↑1', enabled: true });
+  assert.equal(scmPrimaryAction({ ...clean, behind: 3 }).label, 'Sync Changes ↓3');
+  assert.equal(scmPrimaryAction({ ...clean, behind: 1, ahead: 1 }).kind, 'diverged');
+  assert.equal(scmPrimaryAction({ ...clean, upstream: null }).kind, 'publish');
+  assert.equal(scmPrimaryAction({ ...clean, upstream: null, head: null }).enabled, false);
+  assert.equal(scmPrimaryAction({ ...clean, detached: true, upstream: null }).enabled, false);
+  assert.equal(scmPrimaryAction({ ...clean, staged: paths, unstaged: paths, ahead: 1 }).kind, 'commit');
+  assert.equal(scmPrimaryAction({ ...clean, unstaged: paths, ahead: 1 }).kind, 'commitAll');
+  assert.equal(scmPrimaryAction({ ...clean, conflicts: paths, operation: 'merge' }).kind, 'conflicts');
+  assert.equal(scmPrimaryAction({ ...clean, staged: paths, operation: 'rebase' }).kind, 'continue');
+  assert.equal(scmPrimaryAction(null).enabled, false);
+});
+
+test('workspace split stays usable when dragged or restored from preferences', async () => {
+  const { scmSplitRatio } = await import('../plugins/source-control-proof/panel-model.mjs');
+  assert.equal(scmSplitRatio(undefined), 0.6);
+  assert.equal(scmSplitRatio(0.01), 0.2);
+  assert.equal(scmSplitRatio(0.99), 0.8);
+  assert.equal(scmSplitRatio(0.4), 0.4);
+  assert.equal(scmSplitRatio('0.3'), 0.6);
+});
+
+test('clean branch one commit ahead shows a sync action and matching outgoing comparison', async t => {
+  const { execFileSync } = await import('node:child_process');
+  const { mkdtemp, rm, writeFile } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { handle } = await import('../plugins/source-control-proof/server.mjs');
+  const { scmPrimaryAction } = await import('../plugins/source-control-proof/panel-model.mjs');
+  const { buildHistoryGraph } = await import('../plugins/source-control-proof/panel-graph.mjs');
+  const root = await mkdtemp(join(tmpdir(), 'codex-workbench-outgoing-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const git = (...args) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  const tool = async (name, args = {}) =>
+    (await handle('tools/call', { name, arguments: { repoPath: root, ...args } })).structuredContent;
+  git('init', '-b', 'main');
+  git('config', 'user.name', 'Fixture');
+  git('config', 'user.email', 'fixture@example.com');
+  git('config', 'commit.gpgsign', 'false');
+  git('commit', '--allow-empty', '-m', 'Base');
+  const base = git('rev-parse', 'HEAD');
+  git('remote', 'add', 'origin', join(root, 'remote.git'));
+  git('update-ref', 'refs/remotes/origin/main', base);
+  git('branch', '--set-upstream-to=origin/main');
+  await writeFile(join(root, 'notes.txt'), 'outgoing\n');
+  git('add', 'notes.txt');
+  git('commit', '-m', 'Outgoing');
+  const status = await tool('git_status');
+  assert.equal(status.branch, 'main');
+  assert.equal(status.ahead, 1);
+  assert.equal(status.behind, 0);
+  assert.deepEqual(scmPrimaryAction(status), { kind: 'sync', label: 'Sync Changes ↑1', enabled: true });
+  const history = await tool('git_history', { scope: 'all' });
+  const outgoing = buildHistoryGraph(history.commits, history).find(row => row.kind === 'outgoing');
+  assert.equal(outgoing.count, 1);
+  assert.deepEqual(outgoing.comparison, { from: base, to: status.head });
+  assert.deepEqual((await tool('git_compare', outgoing.comparison)).files, [{ path: 'notes.txt', status: 'A' }]);
 });

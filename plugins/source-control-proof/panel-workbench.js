@@ -1,5 +1,5 @@
 const workbench = {
-  pane: 'changes', tree: false, folders: new Set(), drafts: new Map(),
+  tree: false, folders: new Set(), drafts: new Map(),
   history: null, historyPath: null, historyRef: null, historyKey: '', historyRequest: 0,
   historySelection: null, preview: 'file', patch: null, busy: null,
 };
@@ -18,19 +18,6 @@ function control(text, onClick, className = 'sc-control') {
   return button;
 }
 
-function setPane(pane) {
-  workbench.pane = pane;
-  document.querySelector('.sc-app').dataset.pane = pane;
-  for (const button of document.querySelectorAll('[data-pane-button]')) {
-    button.setAttribute('aria-pressed', String(button.dataset.paneButton === pane));
-  }
-  if (pane === 'history') loadHistory();
-}
-
-function showPreview() {
-  if (matchMedia('(max-width: 740px)').matches) setPane('preview');
-}
-
 function resetPreview() {
   workbench.preview = 'file';
   workbench.patch = null;
@@ -44,34 +31,18 @@ function resetPreview() {
 function newCheckout(oldCheckout) {
   if (oldCheckout) workbench.drafts.set(oldCheckout, el('commit-message').value);
   el('commit-message').value = workbench.drafts.get(state.checkout) || '';
-  workbench.history = null;
-  workbench.historyPath = null;
-  workbench.historyRef = null;
-  workbench.historyKey = '';
   workbench.output = '';
-  workbench.historyRequest++;
+  resetHistoryCheckout();
   resetPreview();
-  setPane('changes');
-  renderHistory();
+  closePreview({ restore: false });
   updateCommitButton();
 }
 
-function updateCommitButton() {
-  const hasItems = !!state.status?.staged.length;
-  el('commit-submit').disabled = !!workbench.busy || !hasItems || !el('commit-message').value.trim();
-}
-
-function repositoryStatusChanged(data, previous) {
-  const tracking = data.upstream
-    ? [(data.behind === null ? '' : '↓' + data.behind), (data.ahead === null ? '' : '↑' + data.ahead)].filter(Boolean).join(' ')
-    : '';
-  el('tracking').textContent = tracking;
-  el('tracking').title = data.upstream ? 'Tracking ' + data.upstream : '';
+function repositoryStatusChanged() {
   el('file-actions').disabled = !state.selection;
   updateCommitButton();
-  if (workbench.pane === 'history' && (!previous || data.head !== previous.head || data.ahead !== previous.ahead || data.behind !== previous.behind || data.upstream !== previous.upstream)) {
-    loadHistory({ reset: true });
-  }
+  renderHistoryStatus();
+  loadHistory();
 }
 
 async function performAction(tool, args, label) {
@@ -86,6 +57,7 @@ async function performAction(tool, args, label) {
   state.refreshEpoch = null;
   el('staging-message').textContent = label + '…';
   updateCommitButton();
+  renderHistoryStatus();
   renderFiles();
   let success = false;
   try {
@@ -122,11 +94,12 @@ async function performAction(tool, args, label) {
   } finally {
     if (workbench.busy === token) workbench.busy = null;
     updateCommitButton();
+    renderHistoryStatus();
     renderFiles();
     if (epoch === state.epoch) {
       if (workbench.preview === 'patch') resetPreview();
       await refresh({ force: true });
-      if (workbench.pane === 'history') await loadHistory({ reset: true });
+      if (tool !== 'git_change' && tool !== 'git_apply_patch') await loadHistory({ reset: true });
     }
   }
   return success;
@@ -180,29 +153,28 @@ function fileTreeItems(files, group, makeFileRow) {
   return list;
 }
 
-function addGroupActions(heading, group, count) {
-  if (!count) return;
+function groupMenuEntries(group) {
   const action = group === 'staged' ? 'unstage' : 'stage';
-  const title = action === 'stage' ? 'Stage group' : 'Unstage group';
-  const button = control(action === 'stage' ? '+' : '−', () => performAction('git_change', { action, group }, title));
-  button.title = title;
-  button.setAttribute('aria-label', title);
-  button.disabled = !!workbench.busy || !!state.staging;
-  heading.append(button);
+  const label = action === 'stage' ? 'Stage group' : 'Unstage group';
+  const busy = !!workbench.busy || !!state.staging;
+  const epoch = state.epoch;
+  const entries = [{ label, symbol: action === 'stage' ? 'plus' : 'minus', disabled: busy,
+    run: () => {
+      if (epoch === state.epoch) performAction('git_change', { action, group }, label);
+    },
+  }];
   if (group === 'unstaged' || group === 'untracked') {
-    const label = group === 'unstaged' ? 'Discard unstaged changes' : 'Remove untracked files';
-    const remove = control('×', () => {
+    const discard = group === 'unstaged' ? 'Discard unstaged changes' : 'Remove untracked files';
+    entries.push({ label: discard, symbol: 'discard', disabled: busy, run: () => {
+      if (epoch !== state.epoch || !state.status) return;
       const expectedPaths = state.status[group].map(file => file.path);
       const total = expectedPaths.length;
-      actionForm(label, [], (_, confirmed) =>
-        performAction('git_change', { action: 'discard', group, confirmed, expectedPaths }, label),
-      { confirmation: label + ' · ' + total + (total === 1 ? ' file' : ' files') + ' · ' + state.checkout });
-    });
-    remove.title = label;
-    remove.setAttribute('aria-label', label);
-    remove.disabled = !!workbench.busy || !!state.staging;
-    heading.append(remove);
+      actionForm(discard, [], (_, confirmed) =>
+        performAction('git_change', { action: 'discard', group, confirmed, expectedPaths }, discard),
+      { confirmation: discard + ' · ' + total + (total === 1 ? ' file' : ' files') + ' · ' + state.checkout });
+    } });
   }
+  return entries;
 }
 
 function renderSplit(view) {
@@ -230,100 +202,6 @@ function renderSplit(view) {
   scroller.scrollTop = oldScroll.top;
   scroller.scrollLeft = oldScroll.left;
   el('view-message').hidden = true;
-}
-
-async function loadHistory({ reset = false, more = false } = {}) {
-  if (!state.status) return;
-  const data = state.status;
-  const key = JSON.stringify([data.checkout, data.head, data.upstream, data.ahead, data.behind, workbench.historyRef, workbench.historyPath]);
-  if (!reset && !more && key === workbench.historyKey) return;
-  const previous = workbench.history;
-  workbench.historyKey = key;
-  const token = ++workbench.historyRequest;
-  el('history-state').textContent = 'Loading commits…';
-  el('history-more').disabled = true;
-  try {
-    const result = await callTool('git_history', {
-      repoPath: data.checkout, limit: 40,
-      ...(workbench.historyRef ? { ref: workbench.historyRef } : {}),
-      ...(workbench.historyPath ? { path: workbench.historyPath } : {}),
-      ...(more ? { offset: previous.nextOffset, cursor: previous.cursor } : {}),
-    });
-    if (token !== workbench.historyRequest) return;
-    workbench.history = { ...result, commits: [...(more ? previous.commits : []), ...result.commits] };
-    renderHistory();
-  } catch (error) {
-    if (token !== workbench.historyRequest) return;
-    workbench.historyKey = '';
-    el('history-state').textContent = error.message;
-    const retry = control('Reload history', () => loadHistory({ reset: true }));
-    el('history-state').append(' ', retry);
-  } finally {
-    if (token === workbench.historyRequest) el('history-more').disabled = false;
-  }
-}
-
-function graphMark(mark) {
-  const make = (tag, attrs) => {
-    const node = document.createElementNS('http://www.w3.org/2000/svg', tag);
-    for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, value);
-    return node;
-  };
-  const width = Math.max(mark.columns, 1) * 11 + 2;
-  const x = lane => 6 + lane * 11;
-  const svg = make('svg', { class: 'sc-graph-mark', viewBox: '0 0 ' + width + ' 36', width, height: 36, 'aria-hidden': 'true' });
-  for (const { from, to, color } of mark.edges) {
-    svg.append(make('path', { d: 'M' + x(from) + ' 18C' + x(from) + ' 27 ' + x(to) + ' 25 ' + x(to) + ' 36', class: 'sc-graph-edge sc-lane-' + color }));
-    if (from !== mark.lane) svg.append(make('path', { d: 'M' + x(from) + ' 0V18', class: 'sc-graph-edge sc-lane-' + color }));
-  }
-  if (mark.incoming) svg.append(make('path', { d: 'M' + x(mark.lane) + ' 0V18', class: 'sc-graph-edge sc-lane-' + mark.color }));
-  svg.append(make('circle', { cx: x(mark.lane), cy: 18, r: 3.7, class: 'sc-graph-node sc-lane-' + mark.color }));
-  return svg;
-}
-
-function renderHistory() {
-  const history = workbench.history;
-  const list = el('history-list');
-  list.replaceChildren();
-  el('history-heading').textContent = workbench.historyPath ? 'File history' : 'Commit graph';
-  el('history-more').hidden = history?.nextOffset == null;
-  const counts = history ? [history.behind ? history.behind + ' incoming' : '', history.ahead ? history.ahead + ' outgoing' : ''].filter(Boolean) : [];
-  const filter = workbench.historyPath || workbench.historyRef;
-  el('history-state').textContent = history
-    ? [filter, counts.join(' · '), history.commits.length ? '' : 'No commits'].filter(Boolean).join(' · ')
-    : 'Choose a repository to view its history.';
-  if (filter) el('history-state').append(' ', control('Clear filter', () => filterHistory(null, null)));
-  if (!history) return;
-  const topology = workbench.historyPath ? history.commits.map((commit, index) => ({
-    id: commit.id, parents: index + 1 < history.commits.length ? [history.commits[index + 1].id] : [],
-  })) : history.commits;
-  graphRows(topology).forEach((mark, index) => {
-    const commit = history.commits[index];
-    const row = control('', () => openCommit(commit.id, workbench.historyPath), 'sc-history-row');
-    row.setAttribute('aria-pressed', String(workbench.historySelection?.commit === commit.id));
-    row.title = commit.subject + ' · ' + commit.author + ' · ' + commit.id;
-    if (commit.relation === 'ahead') row.title += ' · Outgoing';
-    if (commit.relation === 'behind') row.title += ' · Incoming';
-    const copy = element('span', 'sc-history-copy');
-    copy.append(element('strong', '', commit.subject || '(empty subject)'), element('small', '', commit.author + ' · ' + commit.id.slice(0, 8)));
-    row.append(graphMark(mark), copy);
-    const refs = element('span', 'sc-history-refs');
-    if (['ahead', 'behind'].includes(commit.relation)) {
-      const direction = element('span', 'sc-ref sc-ref-direction', commit.relation === 'ahead' ? '↑' : '↓');
-      direction.setAttribute('aria-label', commit.relation === 'ahead' ? 'Outgoing' : 'Incoming');
-      refs.append(direction);
-    }
-    for (const ref of commit.refs.slice(0, 2)) refs.append(element('span', 'sc-ref sc-ref-' + ref.kind, ref.name));
-    row.append(refs);
-    list.append(row);
-  });
-}
-
-function filterHistory(ref, path) {
-  workbench.historyRef = ref;
-  workbench.historyPath = path;
-  workbench.historyKey = '';
-  setPane('history');
 }
 
 function openDetail(title, subtitle, type) {
@@ -437,19 +315,23 @@ async function openBlame(path) {
   }
 }
 
-function openFileActions() {
-  const selection = state.selection;
-  if (!selection) return;
+function fileMenuEntries(selection) {
+  if (!selection) return [];
+  const epoch = state.epoch;
   const { path, group } = selection;
   const file = state.status?.[group].find(item => item.path === path);
   const historyPath = file?.originalPath || path;
+  const staging = group === 'staged' ? 'Unstage' : 'Stage';
   const actions = [
+    { label: 'Open Diff', run: () => { setMode('diff'); selectWorkingFile({ path }, group); } },
+    { label: staging, disabled: !!state.staging || !!workbench.busy, run: () => changeStaging(path, group) },
+    { separator: true },
     { label: 'File history', disabled: group === 'untracked', run: () => filterHistory(null, historyPath) },
     { label: 'Line attribution', disabled: group === 'untracked', run: () => openBlame(path) },
     { label: 'Copy path', run: () => copyText(path) },
   ];
   if (['staged', 'unstaged', 'untracked'].includes(group)) {
-    actions.unshift({ label: 'Select lines or hunks…', run: () => openPatch(path, group) });
+    actions.unshift({ label: 'Select lines or hunks…', run: () => { selectWorkingFile({ path }, group); openPatch(path, group); } });
   }
   if (group === 'unstaged') {
     actions.push({ label: 'Discard working-copy changes…', run: () => actionForm('Discard changes', [], (_, confirmed) =>
@@ -471,10 +353,18 @@ function openFileActions() {
       { confirmation: path + ' · Delete from working copy', submitLabel: 'Delete file' }) },
     );
   } else {
-    actions.unshift({ label: 'Resolve conflict…', run: openConflict });
+    actions.unshift({ label: 'Resolve conflict…', run: () => selectWorkingFile({ path }, group) });
   }
-  if (workbench.preview !== 'file') actions.unshift({ label: 'Back to file preview', run: () => selectWorkingFile({ path }, group) });
-  commandList('File actions', actions);
+  if (workbench.preview === 'patch') actions.unshift({ label: 'Back to file preview', run: () => selectWorkingFile({ path }, group) });
+  return actions.map(entry => entry.run ? {
+    ...entry, run: (...args) => {
+      if (epoch === state.epoch && state.status?.[group].some(item => item.path === path)) return entry.run(...args);
+    },
+  } : entry);
+}
+
+function openFileActions(event) {
+  openContextMenu(fileMenuEntries(state.selection), { anchor: event.currentTarget, label: 'File actions' });
 }
 
 async function openPatch(path, group) {
@@ -591,33 +481,29 @@ async function openConflict() {
 }
 
 function initializeWorkbench() {
-  for (const button of document.querySelectorAll('[data-pane-button]')) {
-    button.onclick = () => setPane(button.dataset.paneButton);
-  }
+  setupWorkspaceShell();
+  initializeHistory();
   el('tree-toggle').onclick = () => {
     workbench.tree = !workbench.tree;
     el('tree-toggle').setAttribute('aria-pressed', String(workbench.tree));
+    el('tree-toggle').setAttribute('aria-label', workbench.tree ? 'Show file list' : 'Show file tree');
     renderFiles();
     savePreference();
   };
   el('action-close').onclick = () => el('action-dialog').close();
-  el('commands').onclick = showCommands;
-  el('branch-button').onclick = chooseBranch;
-  el('history-refs').onclick = chooseReference;
-  el('history-compare').onclick = compareForm;
-  el('history-more').onclick = () => loadHistory({ more: true });
-  el('commit-options').onclick = showCommitOptions;
+  el('commands').onclick = event => showCommands(event.currentTarget, event);
+  el('changes-actions').onclick = event => showChangesActions(event.currentTarget);
+  el('commit-options').onclick = event => showCommitOptions(event.currentTarget, event);
   el('file-actions').onclick = openFileActions;
-  el('commit-message').oninput = updateCommitButton;
   el('commit-form').onsubmit = event => {
     event.preventDefault();
-    const message = el('commit-message').value.trim();
-    if (message && !el('commit-submit').disabled) performAction('git_commit', { action: 'commit', message }, 'Commit staged');
+    runPrimaryAction(el('commit-submit'));
   };
   el('commit-message').onkeydown = event => {
     if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
       event.preventDefault();
-      el('commit-form').requestSubmit();
+      const { kind } = scmPrimaryAction(state.status);
+      if (kind === 'commit' || kind === 'commitAll') submitCommit();
     }
   };
   el('files').addEventListener('keydown', event => {

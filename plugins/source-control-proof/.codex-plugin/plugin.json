@@ -1,6 +1,6 @@
 {
   "name": "codex-git-workbench",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Local Git workbench with changes, staging, commits, history, branches and remotes",
   "mcpServers": "./.mcp.json",
   "interface": {

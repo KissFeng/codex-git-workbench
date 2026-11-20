@@ -1,12 +1,20 @@
+import { randomUUID } from 'node:crypto';
 import { relative } from 'node:path';
 import { realpath, stat } from 'node:fs/promises';
-import { checkoutRoot, git } from './git-status.mjs';
+import { checkoutRoot, git, runGitCommand } from './git-status.mjs';
 import { safePath } from './repo-path.mjs';
 
 const objectId = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
 const metadataFormat = '%H%x00%P%x00%an%x00%aI%x00%s';
 const pageLimit = 100;
 const offsetLimit = 10_000_000;
+const referenceLimit = 10_000;
+const snapshotLimit = 32;
+const snapshotBudget = 32 * 1024 * 1024;
+const snapshots = new Map();
+let snapshotBytes = 0;
+const referenceName = /^refs\/(heads|remotes|tags)\/(.+)$/;
+const referenceKinds = { heads: 'branch', remotes: 'remote', tags: 'tag' };
 const fileLimit = 1000;
 const blameLimit = 2000;
 const diffLimit = 512 * 1024;
@@ -70,18 +78,26 @@ function parseLog(output) {
   return commits;
 }
 
-async function decorate(root, commits, head) {
+async function readReferences(root) {
+  const output = await optionalGit(root, 'show-ref', '--dereference') ?? '';
+  const refs = new Map();
+  for (const line of output.split('\n')) {
+    const [id, fullName] = line.split(' ');
+    if (!fullName || !objectId.test(id)) continue;
+    const ref = fullName.replace(/\^\{\}$/, '');
+    const match = referenceName.exec(ref);
+    if (match) refs.set(ref, { id, label: { name: match[2], kind: referenceKinds[match[1]], ref } });
+  }
+  return { refs, bytes: output.length * 2 + refs.size * 160 };
+}
+
+function decorate(commits, head, refs) {
   if (!commits.length) return;
   const byId = new Map(commits.map(commit => [commit.id, commit]));
-  byId.get(head)?.refs.push({ name: 'HEAD', kind: 'head' });
-  const output = await optionalGit(root, 'show-ref', '--dereference');
-  for (const line of (output ?? '').split('\n')) {
-    const [id, fullName] = line.split(' ');
-    const match = /^refs\/(heads|remotes|tags)\/(.+?)(?:\^\{\})?$/.exec(fullName);
+  byId.get(head)?.refs.push({ name: 'HEAD', kind: 'head', ref: 'HEAD' });
+  for (const { id, label } of refs.values()) {
     const commit = byId.get(id);
-    if (!commit || !match || commit.refs.length >= 64) continue;
-    const kind = { heads: 'branch', remotes: 'remote', tags: 'tag' }[match[1]];
-    commit.refs.push({ name: match[2], kind });
+    if (commit && commit.refs.length < 64) commit.refs.push({ ...label });
   }
 }
 
@@ -116,61 +132,99 @@ async function assignRelations(root, commits, head, upstream, counts) {
   }
 }
 
-function decodeCursor(cursor, root, ref, path, offset) {
-  try {
-    if (typeof cursor !== 'string' || cursor.length > 16_384 || !/^[A-Za-z0-9_-]+$/.test(cursor)) throw new Error();
-    const state = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'));
-    if (state.version !== 1 || state.root !== root ||
-        !Number.isInteger(state.offset) || state.offset < 1 || state.offset > offsetLimit ||
-        ![state.head, state.upstream, state.start].every(id => id === null || typeof id === 'string' && objectId.test(id)) ||
-        (state.ref !== null && typeof state.ref !== 'string') ||
-        (state.path !== null && repositoryPath(root, state.path) !== state.path) ||
-        (ref !== undefined && ref !== state.ref) || (path !== undefined && path !== state.path) ||
-        (offset !== undefined && offset !== state.offset)) throw new Error();
-    return state;
-  } catch {
+function selectedReferences(refs) {
+  if (refs === undefined) return undefined;
+  if (!Array.isArray(refs) || refs.length > referenceLimit) throw new Error('Invalid Git history references.');
+  const selected = [...new Set(refs)];
+  if (selected.some(ref =>
+    typeof ref !== 'string' || ref.length > 1024 || (ref !== 'HEAD' && !referenceName.test(ref)))) {
+    throw new Error('Invalid Git history references.');
+  }
+  return selected.sort();
+}
+
+function continueHistory(cursor, { root, ref, selected, scope, path, offset }) {
+  const match = typeof cursor === 'string' && /^([a-f0-9-]{36})_(\d{1,8})$/.exec(cursor);
+  const snapshotId = match?.[1];
+  const next = Number(match?.[2]);
+  const snapshot = snapshots.get(snapshotId);
+  if (!snapshot || snapshot.root !== root || next < 1 || next > offsetLimit ||
+      (offset !== undefined && offset !== next) || (ref !== undefined && ref !== snapshot.ref) ||
+      (selected !== undefined && (selected.length !== snapshot.selected.length || selected.some((name, index) => name !== snapshot.selected[index]))) ||
+      (scope !== undefined && scope !== snapshot.scope) || (path !== undefined && path !== snapshot.path)) {
     throw new Error('Invalid Git history cursor.');
   }
+  snapshots.delete(snapshotId);
+  snapshots.set(snapshotId, snapshot);
+  return { snapshot, snapshotId, skip: next };
 }
 
-async function historySnapshot(root, ref, path, offset) {
-  const [head, upstream, start] = await Promise.all([
+function saveSnapshot(snapshot) {
+  while (snapshots.size && (snapshots.size === snapshotLimit || snapshotBytes + snapshot.bytes > snapshotBudget)) {
+    const [id, oldest] = snapshots.entries().next().value;
+    snapshotBytes -= oldest.bytes;
+    snapshots.delete(id);
+  }
+  const id = randomUUID();
+  snapshots.set(id, snapshot);
+  snapshotBytes += snapshot.bytes;
+  return id;
+}
+
+async function commitTips(root, ids) {
+  if (!ids.length) return [];
+  const { stdout } = await runGitCommand(root, ['cat-file', '--batch-check=%(objectname) %(objecttype)'], {
+    input: ids.join('\n') + '\n',
+  });
+  return stdout.split('\n').filter(line => line.endsWith(' commit')).map(line => line.slice(0, -7));
+}
+
+async function historySnapshot({ root, ref, selected = [], scope = 'auto', path }) {
+  const [head, upstream, start, { refs, bytes }] = await Promise.all([
     revision(root, 'HEAD', true),
     revision(root, '@{upstream}', true),
-    ref === undefined ? null : revision(root, ref),
+    ref === undefined || selected.length ? null : revision(root, ref),
+    readReferences(root),
   ]);
-  return { version: 1, root, head, upstream, start, ref: ref ?? null, path: path ?? null, offset };
+  let starts = start ? [start] : path ? [head] : [head, upstream];
+  if (selected.length) {
+    starts = selected.map(name => name === 'HEAD' ? head : refs.get(name)?.id);
+    const commits = new Set(await commitTips(root, [...new Set(starts.filter(Boolean))]));
+    const invalid = selected.find((name, index) => !commits.has(starts[index]));
+    if (invalid) throw new Error('Git history reference does not identify a commit: ' + invalid);
+  } else if (scope === 'all' && !start) {
+    const ids = [...new Set([...refs.values()].map(({ id }) => id))];
+    starts = [head, upstream, ...await commitTips(root, ids)];
+  }
+  const counts = await divergence(root, head, upstream);
+  return { root, head, upstream, starts: [...new Set(starts.filter(Boolean))], ref, selected, scope, path, refs, counts, bytes };
 }
 
-export async function gitHistory({ repoPath = process.cwd(), limit = 50, offset, cursor, ref, path }) {
+export async function gitHistory({ repoPath = process.cwd(), limit = 50, offset, cursor, ref, refs, scope, path }) {
   if (!Number.isInteger(limit) || limit < 1 || limit > pageLimit) throw new Error('History limit must be between 1 and ' + pageLimit + '.');
   if (offset !== undefined && (!Number.isInteger(offset) || offset < 0 || offset > offsetLimit)) throw new Error('Invalid history offset.');
+  if (scope !== undefined && scope !== 'auto' && scope !== 'all') throw new Error('Invalid Git history scope.');
+  const selected = selectedReferences(refs);
   const root = await checkoutRoot(repoPath);
-  const target = repositoryPath(root, path);
-  const snapshot = cursor === undefined
-    ? await historySnapshot(root, ref, target, offset ?? 0)
-    : decodeCursor(cursor, root, ref, target, offset);
-  const { head, upstream, start } = snapshot;
-  const file = snapshot.path;
-  const starts = start ? [start] : file ? [head].filter(Boolean) : [...new Set([head, upstream].filter(Boolean))];
-  const [output, counts] = await Promise.all([
-    starts.length ? git(root, 'log', ...logOptions, '--topo-order', '-z', '--format=' + metadataFormat,
-      '--max-count=' + (limit + 1), '--skip=' + snapshot.offset, ...(file ? ['--follow'] : []),
-      ...starts, '--', ...(file ? [file] : [])) : '',
-    divergence(root, head, upstream),
-  ]);
-  const commits = parseLog(output);
-  const followingOffset = snapshot.offset + limit;
+  const query = { root, ref, selected, scope, path: repositoryPath(root, path), offset };
+  const { snapshot, snapshotId, skip } = cursor === undefined
+    ? { snapshot: await historySnapshot(query), skip: offset ?? 0 }
+    : continueHistory(cursor, query);
+  const { head, upstream, starts, counts, path: file } = snapshot;
+  // Feed resolved IDs on stdin so repositories with many refs stay within argv limits.
+  const args = ['log', ...logOptions, '--topo-order', '-z', '--format=' + metadataFormat,
+    '--max-count=' + (limit + 1), '--skip=' + skip, ...(file ? ['--follow'] : []), '--stdin', '--', ...(file ? [file] : [])];
+  const commits = starts.length ? parseLog((await runGitCommand(root, args, { input: starts.join('\n') + '\n' })).stdout) : [];
+  const followingOffset = skip + limit;
   const nextOffset = commits.length > limit && followingOffset <= offsetLimit ? followingOffset : null;
   commits.length = Math.min(commits.length, limit);
-  const withinTips = !start || start === head || start === upstream;
-  await Promise.all([
-    decorate(root, commits, head),
-    assignRelations(root, commits, head, upstream, withinTips ? counts : undefined),
-  ]);
+  decorate(commits, head, snapshot.refs);
+  const withinTips = starts.every(tip => tip === head || tip === upstream);
+  await assignRelations(root, commits, head, upstream, withinTips ? counts : undefined);
+  const cursorId = nextOffset === null ? null : snapshots.has(snapshotId) ? snapshotId : saveSnapshot(snapshot);
   return {
     commits, ...counts, head, upstream, nextOffset,
-    cursor: nextOffset === null ? null : Buffer.from(JSON.stringify({ ...snapshot, offset: nextOffset })).toString('base64url'),
+    cursor: cursorId === null ? null : cursorId + '_' + nextOffset,
   };
 }
 
@@ -226,7 +280,7 @@ export async function gitHistoryDetail({ repoPath = process.cwd(), commit, path,
   }
   const [changes] = await Promise.all([
     diffResult(root, parentId ? ['diff'] : ['diff-tree', '--root', '--no-commit-id', '-r'], parentId ? [parentId, id] : [id], file),
-    decorate(root, [record], head),
+    readReferences(root).then(({ refs }) => decorate([record], head, refs)),
     assignRelations(root, [record], head, upstream),
   ]);
   const messageBytes = Buffer.from(message);

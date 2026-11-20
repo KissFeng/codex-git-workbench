@@ -1,35 +1,3 @@
-export function graphRows(commits) {
-  let lanes = [];
-  let nextColor = 0;
-  return commits.map(commit => {
-    let lane = lanes.findIndex(item => item.id === commit.id);
-    const incoming = lane >= 0;
-    if (!incoming) {
-      lane = lanes.length;
-      lanes.push({ id: commit.id, color: nextColor++ % 6 });
-    }
-    const color = lanes[lane].color;
-    const outgoing = lanes.filter((_, index) => index !== lane);
-    let insertion = lane;
-    for (const [index, parent] of commit.parents.entries()) {
-      if (!outgoing.some(item => item.id === parent)) {
-        outgoing.splice(insertion++, 0, { id: parent, color: index === 0 ? color : nextColor++ % 6 });
-      }
-    }
-    const edges = [];
-    for (const [from, item] of lanes.entries()) {
-      const targets = from === lane ? commit.parents : [item.id];
-      for (const target of targets) {
-        const to = outgoing.findIndex(candidate => candidate.id === target);
-        edges.push({ from, to, color: outgoing[to].color });
-      }
-    }
-    const result = { lane, color, edges, incoming, columns: Math.max(lanes.length, outgoing.length) };
-    lanes = outgoing;
-    return result;
-  });
-}
-
 export function diffRows(text) {
   const rows = [];
   let oldLine = 0;
@@ -88,4 +56,24 @@ export function buildFileTree(files) {
     parent.children.push({ name, file });
   }
   return tree.children;
+}
+
+export function scmPrimaryAction(status) {
+  const action = (kind, label, enabled = true) => ({ kind, label, enabled });
+  if (!status) return action('none', 'Commit', false);
+  if (status.conflicts.length) return action('conflicts', 'Resolve Conflicts');
+  const operations = { merge: 'Merge', rebase: 'Rebase', cherryPick: 'Cherry-pick' };
+  if (operations[status.operation]) return action('continue', 'Continue ' + operations[status.operation]);
+  if (status.staged.length) return action('commit', 'Commit Staged');
+  if (status.unstaged.length || status.untracked.length) return action('commitAll', 'Commit');
+  if (status.detached || !status.head || !status.hasRemote) return action('none', 'Commit', false);
+  if (!status.upstream) return action('publish', 'Publish Branch');
+  const counts = [status.behind > 0 ? '↓' + status.behind : '', status.ahead > 0 ? '↑' + status.ahead : ''].filter(Boolean);
+  return counts.length
+    ? action(status.behind && status.ahead ? 'diverged' : 'sync', 'Sync Changes ' + counts.join(' '))
+    : action('none', 'Commit', false);
+}
+
+export function scmSplitRatio(value) {
+  return Number.isFinite(value) ? Math.max(0.2, Math.min(0.8, value)) : 0.6;
 }

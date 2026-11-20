@@ -19,7 +19,9 @@ const operationActions = [
   'moveWorktreeChanges', 'conflictResolve',
 ];
 const definitions = [
-  ['git_history', 'Read Git history', history, 'gitHistory', { limit: integer, offset: integer, cursor: string, ref: string, path: string }],
+  ['git_history', 'Read Git history', history, 'gitHistory', {
+    limit: integer, offset: integer, cursor: string, ref: string, path: string, scope: choices('auto', 'all'), refs: strings,
+  }],
   ['git_history_detail', 'Read a commit and its changes', history, 'gitHistoryDetail',
     { commit: string, path: string, parent: { anyOf: [string, integer] } }, ['commit']],
   ['git_compare', 'Compare Git references or the working copy', history, 'gitCompare',

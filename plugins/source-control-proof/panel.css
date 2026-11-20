@@ -53,14 +53,9 @@ textarea:focus-visible, select:focus-visible { outline: 2px solid var(--accent);
   display: grid; grid-template-columns: minmax(260px, 32%) minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr);
   min-height: min(510px,70vh); overflow: hidden;
 }
-.sc-pane-nav { grid-column: 1/-1; background: var(--surface); padding: 5px 7px; border-bottom: 1px solid var(--border); }
-.sc-pane-nav .sc-control { display: flex; align-items: center; gap: 6px; color: var(--muted); }
-.sc-pane-nav .sc-control[aria-pressed=true] { color: var(--text); font-weight: 600; }
-.sc-pane-nav .sc-preview-tab { display: none; }
 .sc-count { border: 0; padding: 1px 5px; background: var(--sidebar); }
 .sc-rail { min-width: 0; border-right: 1px solid var(--border); background: var(--sidebar); }
 .sc-file-list, .sc-history { max-height: max(320px, calc(100vh - 180px)); overflow: auto; border: 0; }
-.sc-app:not([data-pane=history]) .sc-history, .sc-app[data-pane=history] .sc-file-list { display: none; }
 .sc-list-heading { min-height: 32px; padding: 4px 10px; gap: 5px; color: var(--muted); }
 .sc-list-heading .sc-control { font-size: 11px; }
 .sc-commit { display: grid; gap: 6px; padding: 10px; border-bottom: 1px solid var(--border); background: var(--surface); }
@@ -106,29 +101,6 @@ textarea:focus-visible, select:focus-visible { outline: 2px solid var(--accent);
 .sc-split-cell.removed, .sc-patch-line.deletion { background: var(--removed); }
 .sc-split-labels, .sc-split-heading { background: var(--sidebar); color: var(--muted); }
 .sc-split-labels span, .sc-split-heading { padding: 2px 8px; }
-.sc-history-state { margin: 0; min-height: 0; padding: 5px 9px; font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
-.sc-history-state:empty { display: none; }
-.sc-history-list { padding: 0 4px; overflow-x: auto; }
-.sc-history-row {
-  display: flex; align-items: center; gap: 7px; width: 100%; min-height: 36px; min-width: min-content;
-  padding: 0 6px; border-radius: 4px; text-align: left;
-}
-.sc-history-row[aria-pressed=true] { background: var(--selection); }
-.sc-history-copy { display: flex; flex-direction: column; min-width: 0; flex: 1; gap: 1px; }
-.sc-history-copy strong, .sc-history-copy small { text-overflow: ellipsis; overflow: hidden; white-space: nowrap; }
-.sc-history-copy strong { font-size: 12px; font-weight: 500; }
-.sc-history-copy small { font-size: 10px; color: var(--muted); }
-.sc-graph-mark { width: auto; height: 36px; overflow: visible; }
-.sc-graph-edge { fill: none; stroke: var(--lane); stroke-width: 1.25px; }
-.sc-graph-node { fill: var(--surface); stroke: var(--lane); stroke-width: 2px; }
-.sc-lane-0 { --lane: var(--lane-0); } .sc-lane-1 { --lane: var(--lane-1); }
-.sc-lane-2 { --lane: var(--lane-2); } .sc-lane-3 { --lane: var(--lane-3); }
-.sc-lane-4 { --lane: var(--lane-4); } .sc-lane-5 { --lane: var(--lane-5); }
-.sc-history-refs { display: grid; gap: 2px; min-width: 0; max-width: 36%; }
-.sc-ref { padding: 1px 5px; border-radius: 4px; color: var(--muted); background: var(--surface); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sc-ref-head, .sc-ref-branch { color: var(--accent); background: var(--selection); }
-.sc-ref-remote, .sc-ref-upstream { color: var(--lane-1); }
-.sc-ref-tag { color: var(--lane-2); }
 .sc-more { margin: 6px 8px; }
 .sc-detail { order: 2; overflow: auto; min-height: 0; max-height: max(260px,calc(100vh - 210px)); padding: 10px; }
 .sc-detail-diff { order: 3; border-top: 1px solid var(--border); }
@@ -166,10 +138,7 @@ textarea:focus-visible, select:focus-visible { outline: 2px solid var(--accent);
 @media (max-width: 740px) {
   body { padding: 9px; }
   .sc-workspace { grid-template-columns: minmax(0,1fr); min-height: min(420px,70vh); }
-  .sc-pane-nav .sc-preview-tab { display: flex; }
   .sc-rail { border-right: 0; }
-  .sc-app:not([data-pane=preview]) .sc-viewer,
-  .sc-app[data-pane=preview] .sc-rail { display: none; }
   .sc-file-list, .sc-history { max-height: max(285px,calc(100vh - 154px)); }
   .sc-checkout-path { flex-basis: 100%; }
   .sc-conflict-columns { grid-template-columns: minmax(0,1fr); }

@@ -17,12 +17,17 @@ Open **Git Workbench** from the panel picker. Reopen Codex if the new panel or v
 
 ## Workflows
 
+Repositories, Changes and Graph are visible together. Collapse sections or drag the divider to allocate room between changes and history. Hover a row to reveal its actions, or open its context menu with a right-click or Shift+F10. On narrow panels, Back returns from the preview to the originating row and scroll position.
+
+The commit button follows the checkout state. A clean, ahead or behind branch offers synchronization. Git operations in progress and unresolved conflicts have dedicated actions. Cmd/Ctrl+Enter in the message field triggers the commit flow.
+
+
 | Area | Panel capabilities |
 | --- | --- |
 | Repositories | Discover saved Codex projects and linked worktrees. Open an absolute checkout path, initialize a repository or clone with optional submodules. |
 | Changes | Browse changes as a list or tree. Open source, unified or split Diff, and image snapshots. Stage or unstage individual files, groups, text hunks and selected lines. Discard selected text or tracked changes, remove confirmed untracked files, ignore files, rename or delete files. |
 | Commits | Commit staged files with Cmd/Ctrl+Enter, commit all, amend, create empty commits and undo an unpublished commit. The options dialog supports all-file amend, a commit template, cryptographic signing, Git sign-off and explicitly skipping hooks. |
-| History | Inspect current and upstream commits, fork and merge edges, reference labels and divergence. View commit messages and changed files, compare refs or the working copy, follow file history and inspect line attribution. |
+| History | Inspect all branches and tags or filter by references. Expand a commit to see its files, locate the current commit and compare incoming or outgoing changes against their common base. View commit messages and changed files, compare refs or the working copy, follow file history and inspect line attribution. |
 | Branches and remotes | Switch local or tracked remote branches, check out detached revisions, manage branches and tags, add or remove remotes, fetch, pull, push, publish an upstream and sync. Sync defaults to fast-forward only. Choose rebase sync or include reachable annotated tags when needed. Force-push requires a lease for the previously selected remote tip. |
 | Conflicts and worktrees | Inspect base, ours, theirs and working content. Edit and stage eligible results or choose a version. Continue or abort merge, rebase and cherry-pick; create, view, apply, pop and drop stashes; manage worktrees and transfer pending changes. |
 
@@ -43,3 +48,5 @@ The Node test suite creates disposable local repositories and bare remotes. It c
 ## License
 
 [MIT](LICENSE). The upstream license and Git history are preserved.
+
+The packaged [third-party notices](plugins/source-control-proof/THIRD_PARTY_NOTICES.md) cover the adapted Code - OSS graph logic.

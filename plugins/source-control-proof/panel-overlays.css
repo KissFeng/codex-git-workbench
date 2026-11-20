@@ -1,0 +1,105 @@
+.sc-workbench-overlay {
+  position: fixed;
+  z-index: 40;
+  max-width: var(--sc-overlay-width, calc(100vw - 16px));
+  max-height: var(--sc-overlay-height, calc(100vh - 16px));
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 10px 30px #0003, 0 2px 6px #0002;
+}
+
+.sc-context-menu {
+  width: max-content;
+  min-width: min(175px, var(--sc-overlay-width));
+  max-width: min(340px, var(--sc-overlay-width));
+  padding: 4px;
+  overflow: auto;
+}
+
+.sc-menu-item {
+  display: block;
+  width: 100%;
+  min-height: 27px;
+  padding: 5px 9px;
+  border-radius: 5px;
+  text-align: left;
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.sc-menu-item:disabled { background: transparent; }
+.sc-menu-item:focus {
+  background: var(--hover);
+  outline: 1px solid var(--border);
+  outline-offset: -1px;
+}
+.sc-menu-divider {
+  height: 1px;
+  margin: 4px;
+  background: var(--border);
+}
+
+.sc-branch-picker {
+  display: flex;
+  flex-direction: column;
+  width: 320px;
+  overflow: hidden;
+}
+.sc-dialog-body .sc-branch-picker { width: 100%; }
+.sc-branch-search { padding: 8px 10px; }
+.sc-branch-search:focus-within {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+.sc-branch-search input { font-size: 13px; }
+.sc-branch-search input:focus-visible { outline: none; }
+.sc-branch-results {
+  max-height: 340px;
+  min-height: 0;
+  overflow: auto;
+  padding: 4px;
+}
+.sc-branch-group + .sc-branch-group {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+}
+.sc-branch-group-heading {
+  padding: 5px 9px 2px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+.sc-branch-entry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sc-branch-entry > span:first-child { min-width: 0; flex: 1; }
+.sc-branch-entry[aria-current=true] { color: var(--accent); opacity: 1; }
+.sc-branch-entry .sc-muted { flex: none; }
+.sc-branch-result-message {
+  margin: 0;
+  padding: 8px 9px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.sc-tooltip {
+  z-index: 50;
+  width: max-content;
+  max-width: min(330px, var(--sc-overlay-width));
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  line-height: 1.45;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  pointer-events: none;
+}
+.sc-tooltip :is(strong, small) { display: block; }
+.sc-tooltip small { color: var(--muted); font-size: inherit; }

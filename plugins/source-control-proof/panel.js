@@ -1,5 +1,6 @@
 const el = id => document.getElementById(id);
-const groups = [['staged', 'Staged Changes'], ['unstaged', 'Unstaged Changes'], ['untracked', 'Untracked Files'], ['conflicts', 'Conflicts']];
+const groups = [['conflicts', 'Merge Changes'], ['staged', 'Staged Changes'], ['unstaged', 'Changes'], ['untracked', 'Untracked Files']];
+const collapsedFileGroups = new Set();
 const state = { checkout: null, status: null, selection: null, mode: 'diff', projects: [], homeDirectory: '', epoch: 0, viewRequest: 0, statusRequest: 0, staging: null, refreshEpoch: null, hostContext: {} };
 const pending = new Map();
 let requestId = 0, pickerSignature = '';
@@ -16,7 +17,7 @@ async function refreshProjects() {
     const catalog = await callTool('git_projects');
     state.projects = catalog.projects; state.homeDirectory = catalog.homeDirectory || '';
     renderPicker();
-    if (state.checkout) el('checkout').textContent = shortPath(state.checkout);
+    renderRepositories();
     if (catalog.discovery?.warning) showError(catalog.discovery.warning);
   })();
   try { await catalogRequest; } finally { catalogRequest = null; }
@@ -26,6 +27,15 @@ function icon(name, className = '') {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   for (const [key, value] of Object.entries({ viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.5', 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true', class: className })) svg.setAttribute(key, value);
   const paths = { repo: 'M4 4h13a2 2 0 0 1 2 2v14H6a2 2 0 0 1-2-2V4Zm0 13h15M8 8h7M8 11h5', file: 'M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9Zm0 0v6h6M8 13h8M8 17h5', image: 'M4 4h16v16H4ZM4 16l5-5 4 4 3-3 4 4M14 8h.01', plus: 'M12 5v14M5 12h14', minus: 'M5 12h14', check: 'm5 12 4 4L19 6', chevron: 'm7 10 5 5 5-5', branch: 'M6 3v12M18 9a9 9 0 0 1-9 9' };
+  Object.assign(paths, {
+    refresh: 'M20 7v5h-5M4 17v-5h5M6 7a7 7 0 0 1 11.5-1L20 9M4 15l2.5 3A7 7 0 0 0 18 17',
+    search: 'M15 15l5 5M17 10a7 7 0 1 1-14 0 7 7 0 0 1 14 0',
+    back: 'M19 12H5m6-6-6 6 6 6', target: 'M20 12a8 8 0 1 1-16 0 8 8 0 0 1 16 0M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0',
+    tree: 'M5 4v14h6M5 10h6m0-2h7v4h-7zm0 8h7v4h-7z', more: 'M4 12h.5m7.25 0h.5m7.25 0h.5',
+    fetch: 'M12 3v12m-4-4 4 4 4-4m-11 8h14', pull: 'M12 4v13m-5-5 5 5 5-5M5 20h14',
+    push: 'M12 20V7m-5 5 5-5 5 5M5 4h14', diff: 'M9 4H4v16h5m6-16h5v16h-5m-5-8h4',
+    warning: 'M12 3 2 20h20ZM12 9v4m0 3h.01', discard: 'M9 7 4 12l5 5M4 12h11a5 5 0 0 0 5-5',
+  });
   const path = document.createElementNS(svg.namespaceURI, 'path'); path.setAttribute('d', paths[name] || paths.file); svg.append(path);
   if (name === 'branch') for (const [cx, cy] of [[18,6],[6,18]]) { const circle = document.createElementNS(svg.namespaceURI, 'circle'); circle.setAttribute('cx', cx); circle.setAttribute('cy', cy); circle.setAttribute('r', 3); svg.append(circle); }
   return svg;
@@ -45,12 +55,17 @@ async function callTool(name, args = {}) {
   return result.structuredContent;
 }
 function showError(message = '') { el('error').textContent = message; el('error').hidden = !message; el('status-dot').dataset.error = String(!!message); }
-function savePreference() { window.openai?.setWidgetState?.({ checkout: state.checkout, mode: state.mode, tree: workbench.tree }); }
+function savePreference() {
+  window.openai?.setWidgetState?.({
+    checkout: state.checkout, mode: state.mode, tree: workbench.tree,
+    split: shellState.ratio, collapsed: [...shellState.collapsed],
+  });
+}
 function renderPicker() {
   const currentProject = state.projects.find(project => project.checkouts.some(checkout => checkout.path === state.checkout));
   const isWorktree = currentProject && state.checkout !== currentProject.path;
-  el('project-label').textContent = currentProject ? currentProject.label + (isWorktree ? ' · Worktree' : '') : state.checkout ? state.checkout.split(/[\\/]/).filter(Boolean).at(-1) : 'Choose a repository';
-  el('project').title = state.checkout || 'Choose repository';
+  const projectLabel = currentProject ? currentProject.label + (isWorktree ? ' · Worktree' : '')
+    : state.checkout?.split(/[\\/]/).filter(Boolean).at(-1) || 'Choose a repository';
   const query = el('project-search').value.trim().toLowerCase();
   const signature = JSON.stringify([state.projects, state.checkout, state.homeDirectory, query, [...expandedProjects]]);
   if (signature === pickerSignature) return;
@@ -93,7 +108,7 @@ function renderPicker() {
   }
   if (state.checkout && !known.has(state.checkout)) {
     const checkout = { path: state.checkout, branch: state.status?.branch || 'Custom checkout' };
-    if (!query || state.checkout.toLowerCase().includes(query)) list.prepend(option({ label: el('project-label').textContent }, checkout));
+    if (!query || state.checkout.toLowerCase().includes(query)) list.prepend(option({ label: projectLabel }, checkout));
   }
   if (!list.childElementCount) { const empty = document.createElement('div'); empty.className = 'sc-picker-no-results'; empty.textContent = query ? 'No repositories match your search.' : 'No saved repositories.'; list.append(empty); }
 }
@@ -117,59 +132,108 @@ function emptyViewer(message) {
   el('view-message').replaceChildren(title,detail); el('view-message').dataset.notice = 'false'; el('view-message').hidden = false;
 }
 function renderFiles() {
-  const scrollContainer = el('files').parentElement, scrollTop = scrollContainer.scrollTop;
-  const focused = el('files').contains(document.activeElement) ? document.activeElement.dataset : null;
-  let focusTarget;
-  el('files').replaceChildren();
+  const scrollContainer = el('changes-body');
+  const scrollTop = scrollContainer.scrollTop;
+  const focus = el('files').contains(document.activeElement) ? railFocusKey(document.activeElement) : null;
+  const rendered = document.createDocumentFragment();
   for (const [key, title] of groups) {
-    const rows = state.status?.[key] || []; if (key === 'conflicts' && !rows.length) continue;
-    const section = document.createElement('section'); section.className = 'sc-group';
-    const heading = document.createElement('h2'); heading.textContent = title;
-    const actions = element('span', 'sc-group-actions');
-    actions.append(element('span', '', rows.length));
-    addGroupActions(actions, key, rows.length);
-    heading.append(actions); section.append(heading);
-    if (!rows.length) {
-      const empty = document.createElement('div'); empty.className = 'sc-empty'; empty.textContent = 'No files'; section.append(empty);
-    } else {
-      const makeFileRow = file => {
-        const row = document.createElement('li'), button = document.createElement('button'); row.className = 'sc-file-row'; button.type = 'button'; button.className = 'sc-file-button';
-        button.dataset.path = file.path; button.dataset.group = key;
-        if (focused?.path === file.path && focused?.group === key) focusTarget = button;
-        button.setAttribute('aria-pressed', String(state.selection?.path === file.path && state.selection?.group === key));
-        const badge = document.createElement('span'); badge.className = 'sc-file-status'; const status = file.change || file.status;
-        badge.textContent = key === 'untracked' || status === 'A' ? 'New' : status; badge.dataset.status = status;
-        badge.title = key === 'untracked' ? 'New file · not tracked yet' : ({ A: 'Added', M: 'Modified', D: 'Deleted', R: 'Renamed', C: 'Copied', UU: 'Conflict' }[status] || status);
-        const path = document.createElement('span'); path.className = 'sc-file-path';
-        const name = document.createElement('span'); name.className = 'sc-file-name'; name.textContent = file.path.split('/').at(-1);
-        path.append(name);
-        const directory = file.path.includes('/') ? file.path.slice(0,file.path.lastIndexOf('/')) : '';
-        if ((!workbench.tree && directory) || file.originalPath) { const detail = document.createElement('span'); detail.className = 'sc-file-directory'; detail.textContent = file.originalPath ? file.originalPath + ' → ' + file.path : directory; path.append(detail); }
-        button.title = file.originalPath ? file.originalPath + ' → ' + file.path : file.path;
-        const imageFile = /\.(png|jpe?g|gif|webp|svg|avif|bmp|ico)$/i.test(file.path);
-        button.append(icon(imageFile ? 'image' : 'file','sc-file-icon'), path, badge); row.append(button);
-        const staging = document.createElement('button'); staging.type = 'button'; staging.className = 'sc-file-stage';
-        const action = key === 'staged' ? 'Unstage' : 'Stage'; staging.title = action + ' ' + file.path; staging.setAttribute('aria-label', staging.title);
-        staging.dataset.path = file.path; staging.dataset.group = key;
-        staging.append(icon(key === 'staged' ? 'minus' : 'plus')); staging.disabled = !!state.staging || !!workbench.busy;
-        staging.onclick = () => changeStaging(file.path, key); row.append(staging);
-        button.onclick = () => selectWorkingFile(file, key);
-        return row;
-      };
-      section.append(fileTreeItems(rows, key, makeFileRow));
+    const rows = state.status?.[key] || [];
+    if (!rows.length) continue;
+    const open = !collapsedFileGroups.has(key);
+    const section = element('section', 'sc-group');
+    const heading = element('h3', 'sc-group-heading');
+    const toggle = control('', () => {
+      if (open) collapsedFileGroups.add(key);
+      else collapsedFileGroups.delete(key);
+      renderFiles();
+    }, 'sc-group-toggle');
+    toggle.append(icon('chevron'), element('span', '', title));
+    toggle.setAttribute('aria-expanded', String(open));
+    toggle.dataset.focusKey = 'group:' + key;
+    const actions = element('div', 'sc-group-actions');
+    actions.append(element('span', 'sc-count', rows.length));
+    const entries = () => groupMenuEntries(key);
+    for (const entry of entries()) {
+      const action = repositoryButton(entry.label, entry.symbol, entry.run);
+      action.disabled = !!entry.disabled;
+      action.dataset.focusKey = 'group-action:' + key + ':' + entry.symbol;
+      actions.append(action);
     }
-    el('files').append(section);
+    bindContextMenu(heading, entries, { anchor: toggle });
+    heading.append(toggle, actions);
+    section.append(heading);
+    if (open) section.append(fileTreeItems(rows, key, file => workingFileRow(file, key)));
+    rendered.append(section);
   }
-  focusTarget?.focus({ preventScroll: true }); scrollContainer.scrollTop = scrollTop;
+  if (!rendered.childElementCount && state.status) rendered.append(element('p', 'sc-empty sc-clean', 'Working tree clean'));
+  el('files').replaceChildren(rendered);
+  scrollContainer.scrollTop = scrollTop;
+  restoreRailFocus(el('files'), focus);
 }
+
+function workingFileRow(file, group) {
+  const selection = { path: file.path, group };
+  const row = element('li', 'sc-file-row');
+  const current = state.selection?.path === file.path && state.selection?.group === group;
+  row.dataset.selected = String(current);
+  const button = control('', () => selectWorkingFile(file, group), 'sc-file-button');
+  button.dataset.path = file.path;
+  button.dataset.group = group;
+  button.dataset.focusKey = JSON.stringify(['file', group, file.path]);
+  button.setAttribute('aria-pressed', String(current));
+  const status = file.change || file.status;
+  const badge = element('span', 'sc-file-status', group === 'untracked' ? 'U' : status);
+  badge.dataset.status = status;
+  const description = file.originalPath ? file.originalPath + ' → ' + file.path : file.path;
+  const path = element('span', 'sc-file-path');
+  path.append(element('span', 'sc-file-name', file.path.split('/').at(-1)));
+  const directory = file.path.includes('/') ? file.path.slice(0,file.path.lastIndexOf('/')) : '';
+  if ((!workbench.tree && directory) || file.originalPath) {
+    path.append(element('span', 'sc-file-directory', file.originalPath ? description : directory));
+  }
+  button.setAttribute('aria-label', description);
+  const imageFile = /\.(png|jpe?g|gif|webp|svg|avif|bmp|ico)$/i.test(file.path);
+  button.append(icon(imageFile ? 'image' : 'file', 'sc-file-icon'), path);
+  bindTooltip(button, description);
+  const entries = () => fileMenuEntries(selection);
+  const actions = element('div', 'sc-file-actions');
+  if (group !== 'conflicts') {
+    const diff = repositoryButton('Open Diff', 'diff', () => { setMode('diff'); selectWorkingFile(file, group); });
+    diff.dataset.focusKey = JSON.stringify(['diff', group, file.path]);
+    actions.append(diff);
+  }
+  const stage = repositoryButton(group === 'staged' ? 'Unstage' : 'Stage', group === 'staged' ? 'minus' : 'plus', () => changeStaging(file.path, group));
+  stage.classList.add('sc-file-stage');
+  stage.dataset.path = file.path;
+  stage.dataset.group = group;
+  stage.dataset.focusKey = JSON.stringify(['stage', group, file.path]);
+  stage.disabled = !!state.staging || !!workbench.busy;
+  actions.append(stage);
+  if (group === 'unstaged' || group === 'untracked') {
+    const remove = group === 'untracked';
+    const label = remove ? 'Remove untracked file' : 'Discard working-copy changes';
+    const discard = repositoryButton(label, 'discard', () => actionForm(label, [], (_, confirmed) =>
+      performAction('git_change', { action: 'discard', path: file.path, group, confirmed }, label),
+    { confirmation: description + ' · ' + state.checkout, submitLabel: label }));
+    discard.disabled = stage.disabled;
+    discard.dataset.focusKey = JSON.stringify(['discard', group, file.path]);
+    actions.append(discard);
+  }
+  const menu = repositoryButton('File actions', 'more', event =>
+    openContextMenu(entries(), { anchor: event.currentTarget, label: 'File actions' }));
+  menu.dataset.focusKey = JSON.stringify(['file-actions', group, file.path]);
+  actions.append(menu);
+  bindContextMenu(row, entries, { anchor: button });
+  row.append(button, actions, badge);
+  return row;
+}
+
 function renderStatus(data) {
-  const previous = state.status;
   state.checkout = data.checkout; state.status = data;
-  el('repo-info').hidden = false; el('checkout').hidden = false;
   for (const project of state.projects) for (const checkout of project.checkouts) if (checkout.path === data.checkout) checkout.branch = data.branch;
-  el('branch').textContent = data.branch; el('checkout').textContent = shortPath(data.checkout); el('checkout').title = data.checkout;
   const count = new Set(groups.flatMap(([group]) => data[group].map(file => file.path))).size;
-  el('total-count').textContent = count; el('change-summary').textContent = count ? count + (count === 1 ? ' changed file' : ' changed files') : 'Working tree clean';
+  el('total-count').textContent = count;
+  el('total-count').hidden = !count;
   el('context').textContent = 'Checkout source: ' + data.contextSource; el('time').textContent = 'Checked ' + new Date(data.checkedAt).toLocaleTimeString();
   el('diagnostics').textContent = JSON.stringify({ launchDirectory: data.launchDirectory, contextSource: data.contextSource, hostContextKeys: Object.keys(state.hostContext) }, null, 2);
   if (state.selection && !data[state.selection.group].some(f => f.path === state.selection.path)) {
@@ -181,12 +245,13 @@ function renderStatus(data) {
     }
   }
   renderPicker();
+  renderRepositories();
   const changes = JSON.stringify(groups.map(([group]) => data[group]));
   if (changes !== workbench.changes) {
     workbench.changes = changes;
     renderFiles();
   }
-  repositoryStatusChanged(data, previous);
+  repositoryStatusChanged();
   savePreference();
 }
 async function refresh({ force = false } = {}) {
@@ -199,7 +264,7 @@ async function refresh({ force = false } = {}) {
     const data = await callTool('git_status', requestedCheckout ? { repoPath: requestedCheckout } : {});
     if (epoch !== state.epoch || requestToken !== state.statusRequest || (state.checkout !== requestedCheckout && state.checkout !== data.checkout)) return;
     renderStatus(data); if (state.selection && workbench.preview === 'file') await loadFile();
-  } catch (error) { if (epoch === state.epoch && requestToken === state.statusRequest && state.checkout === requestedCheckout) { if (!state.status) el('branch').textContent = 'Checkout unavailable'; showError(error.message); } }
+  } catch (error) { if (epoch === state.epoch && requestToken === state.statusRequest && state.checkout === requestedCheckout) { showError(error.message); } }
   finally {
     if (epoch === state.epoch && requestToken === state.statusRequest) {
       state.refreshEpoch = null;
@@ -212,7 +277,7 @@ async function changeStaging(path, group) {
   const epoch = state.epoch, checkout = state.checkout, action = group === 'staged' ? 'unstage' : 'stage';
   const restoreFocus = document.activeElement?.classList.contains('sc-file-stage'); let failed = false;
   state.staging = { epoch, checkout, path, action }; state.statusRequest++; state.viewRequest++; state.refreshEpoch = null;
-  el('refresh').disabled = true; el('staging-message').textContent = (action === 'stage' ? 'Staging ' : 'Unstaging ') + path.split('/').at(-1) + '…'; renderFiles();
+  el('refresh').disabled = true; el('staging-message').textContent = (action === 'stage' ? 'Staging ' : 'Unstaging ') + path.split('/').at(-1) + '…'; updateCommitButton(); renderHistoryStatus(); renderFiles();
   try {
     const data = await callTool('git_staging', { repoPath: checkout, path, group, action });
     if (epoch !== state.epoch) return;
@@ -228,7 +293,7 @@ async function changeStaging(path, group) {
     if (state.selection && workbench.preview === 'file') await loadFile();
   } catch (error) { failed = true; if (epoch === state.epoch) { showError(error.message); el('staging-message').textContent = 'Unable to confirm the staging result.'; } }
   finally {
-    state.staging = null; renderFiles(); el('refresh').disabled = state.refreshEpoch !== null;
+    state.staging = null; updateCommitButton(); renderHistoryStatus(); renderFiles(); el('refresh').disabled = state.refreshEpoch !== null;
     if (epoch !== state.epoch || failed) await refresh({ force: true });
     if (epoch === state.epoch && restoreFocus && document.activeElement === document.body) {
       const target = [...el('files').querySelectorAll('.sc-file-stage')].find(button => button.dataset.path === path);
@@ -236,15 +301,32 @@ async function changeStaging(path, group) {
     }
   }
 }
-async function switchCheckout(checkout) {
+async function switchCheckout(checkout, { focusRepository = false } = {}) {
   const previous = state.checkout;
-  state.epoch++; state.viewRequest++; state.checkout = checkout; state.selection = null; state.status = null;
+  if (checkout === previous && state.status) return;
+  closeWorkbenchOverlays();
+  if (el('action-dialog').open) el('action-dialog').close();
+  closePicker(false);
+  collapsedActiveProjects.clear();
+  const epoch = ++state.epoch;
+  state.viewRequest++;
+  state.checkout = checkout;
+  state.selection = null;
+  state.status = null;
   newCheckout(previous);
-  el('repo-info').hidden = true; el('checkout').hidden = true;
   el('staging-message').textContent = '';
-  el('branch').textContent = 'Loading checkout…'; el('checkout').textContent = checkout; el('context').textContent = ''; el('time').textContent = '';
-  el('checkout').title = checkout; el('total-count').textContent = '0'; el('change-summary').textContent = 'Reading Git status…';
-  el('custom-form').hidden = true; renderPicker(); renderFiles(); emptyViewer(); showError(); await refresh();
+  el('context').textContent = '';
+  el('time').textContent = 'Reading Git status…';
+  el('total-count').hidden = true;
+  renderPicker();
+  renderRepositories();
+  renderFiles();
+  emptyViewer();
+  showError();
+  await refresh();
+  if (focusRepository && epoch === state.epoch && (document.activeElement === document.body || el('repository-list').contains(document.activeElement))) {
+    restoreRailFocus(el('repository-list'), 'repo:' + state.checkout);
+  }
 }
 function clearCode(message) { el('code').hidden = true; el('images').hidden = true; el('view-message').hidden = false; el('view-message').dataset.notice = 'false'; el('view-message').textContent = message; }
 function formatBytes(size) { if (size < 1024) return size + ' B'; if (size < 1024 * 1024) return (size / 1024).toFixed(1) + ' KB'; return (size / (1024 * 1024)).toFixed(2) + ' MB'; }
@@ -328,16 +410,16 @@ el('refresh').onclick = async () => {
   showError();
   try { await refreshProjects(); } catch (error) { showError(error.message); }
   await refresh();
-  if (workbench.pane === 'history') await loadHistory({ reset: true });
+  await loadHistory({ reset: true });
 };
 el('project').onclick = () => { if (el('project-popover').hidden) openPicker(); else closePicker(); };
 el('project-search').oninput = renderPicker;
 el('open-custom').onclick = () => { el('custom-form').hidden = false; el('custom-path').focus(); };
 el('custom-form').onsubmit = event => { event.preventDefault(); const path = el('custom-path').value.trim(); if (path) { closePicker(); switchCheckout(path); } };
-document.addEventListener('pointerdown', event => { if (!el('project-popover').hidden && !event.target.closest('.sc-repository')) closePicker(false); });
-document.addEventListener('focusin', event => { if (!el('project-popover').hidden && !event.target.closest('.sc-repository')) closePicker(false); });
+document.addEventListener('pointerdown', event => { if (!el('project-popover').hidden && !event.target.closest('.sc-repository, .sc-workbench-overlay')) closePicker(false); });
+document.addEventListener('focusin', event => { if (!el('project-popover').hidden && !event.target.closest('.sc-repository, .sc-workbench-overlay')) closePicker(false); });
 document.addEventListener('keydown', event => {
-  if (el('project-popover').hidden) return;
+  if (event.defaultPrevented || el('project-popover').hidden) return;
   if (event.key === 'Escape') { event.preventDefault(); closePicker(); return; }
   if (event.target === el('custom-path')) return;
   const options = [...el('project-list').querySelectorAll('[data-checkout]')];
@@ -354,16 +436,19 @@ initializeWorkbench();
     state.hostContext = host.hostContext || {}; if (state.hostContext.theme) document.documentElement.style.colorScheme = state.hostContext.theme;
     window.parent.postMessage({ jsonrpc: '2.0', method: 'ui/notifications/initialized' }, '*');
     const preferences = window.openai?.widgetState;
+    restoreWorkspacePreferences(preferences);
     if (['split', 'source'].includes(preferences?.mode)) setMode(preferences.mode);
     if (preferences?.tree) {
       workbench.tree = true;
       el('tree-toggle').setAttribute('aria-pressed', 'true');
+      el('tree-toggle').setAttribute('aria-label', 'Show file list');
     }
     await refreshProjects();
-    if (typeof preferences?.checkout === 'string') await switchCheckout(preferences.checkout);
+    if (!state.checkout && typeof preferences?.checkout === 'string') await switchCheckout(preferences.checkout);
     else if (!state.checkout) {
-      el('time').textContent = 'Ready'; renderFiles();
-      openPicker();
+      el('time').textContent = 'Choose a checkout';
+      renderFiles();
+      renderHistory();
     }
     setInterval(() => { if (!document.hidden) refresh(); }, 5000);
     setInterval(() => { if (!document.hidden) refreshProjects().catch(error => showError(error.message)); }, 30000);
