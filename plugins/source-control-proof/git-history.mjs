@@ -290,6 +290,34 @@ export async function gitHistoryDetail({ repoPath = process.cwd(), commit, path,
   };
 }
 
+export async function gitHistoryStats({ repoPath = process.cwd(), commit }) {
+  const root = await checkoutRoot(repoPath);
+  const id = await revision(root, commit);
+  const output = await git(root, 'log', ...logOptions, '--find-renames', '--submodule=short', '-1',
+    '--format=tformat:%b', '--root', '--diff-merges=first-parent', '--numstat', '-z', id, '--');
+  // Git emits the commit body, a NUL terminator, then a newline before any numstat records.
+  const separator = output.indexOf('\0');
+  if (separator < 0) throw new Error('Invalid Git line stats output.');
+  const body = Buffer.from(output.slice(0, separator).replace(/\n$/, ''));
+  const message = new TextDecoder('utf8', { ignoreBOM: true }).decode(body.subarray(0, messageLimit), { stream: true });
+  const stats = { additions: 0, deletions: 0, binaryFiles: 0, filesChanged: 0, message };
+  const records = output.slice(separator + 1).replace(/^\n/, '').split('\0');
+  for (let index = 0; index < records.length - 1; index++) {
+    const record = records[index];
+    const counts = /^(\d+|-)\t(\d+|-)\t/.exec(record);
+    if (!counts) throw new Error('Invalid Git line stats output.');
+    // Renames and copies put both paths in separate NUL-delimited fields.
+    if (record.length === counts[0].length) index += 2;
+    stats.filesChanged++;
+    if (counts[1] === '-') stats.binaryFiles++;
+    else {
+      stats.additions += Number(counts[1]);
+      stats.deletions += Number(counts[2]);
+    }
+  }
+  return stats;
+}
+
 export async function gitCompare({ repoPath = process.cwd(), from, to, path, mergeBase = false }) {
   if (typeof mergeBase !== 'boolean') throw new Error('Merge base selection must be a boolean.');
   const root = await checkoutRoot(repoPath);

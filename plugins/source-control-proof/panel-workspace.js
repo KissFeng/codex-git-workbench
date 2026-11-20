@@ -7,15 +7,18 @@ function isSectionCollapsed(section) {
   return shellState.collapsed.has(section);
 }
 
-function setSectionCollapsed(section, collapsed, { persist = true, load = true } = {}) {
+function setSectionCollapsed(section, collapsed, { persist = true, load = true, motion = persist } = {}) {
   if (!workspaceSections.includes(section)) return;
   if (collapsed) shellState.collapsed.add(section);
   else shellState.collapsed.delete(section);
   const node = el(section + '-section');
-  node.dataset.collapsed = String(collapsed);
   const toggle = node.querySelector('[data-section]');
   toggle.setAttribute('aria-expanded', String(!collapsed));
-  el(toggle.getAttribute('aria-controls')).hidden = collapsed;
+  if (!collapsed) node.dataset.collapsed = 'false';
+  setPanelContentVisible(el(toggle.getAttribute('aria-controls')), !collapsed, {
+    motion: motion && panelMotionEnabled(),
+    onHidden: () => { node.dataset.collapsed = 'true'; },
+  });
   el('scm-divider').hidden = isSectionCollapsed('changes') || isSectionCollapsed('history');
   if (section === 'history' && !collapsed && load) loadHistory();
   if (persist) savePreference();
@@ -58,6 +61,7 @@ function showPreview() {
   };
   closeWorkbenchOverlays();
   document.querySelector('.sc-app').dataset.pane = 'preview';
+  animatePanelArrival(document.querySelector('.sc-viewer'));
   el('preview-back').focus({ preventScroll: true });
 }
 
@@ -66,6 +70,7 @@ function closePreview({ restore = true } = {}) {
   shellState.previewReturn = null;
   document.querySelector('.sc-app').dataset.pane = 'workspace';
   if (!previous || !restore) return;
+  animatePanelArrival(el('scm-rail'));
   railScrollIds.forEach((id, index) => {
     [el(id).scrollTop, el(id).scrollLeft] = previous.scroll[index];
   });
@@ -135,7 +140,7 @@ function repositoryButton(label, symbol, click) {
   return button;
 }
 
-function renderRepositories() {
+function renderRepositories(animatedProject = null) {
   const list = el('repository-list');
   const active = list.contains(document.activeElement) ? railFocusKey(document.activeElement) : null;
   const activeStatus = state.status;
@@ -171,7 +176,7 @@ function renderRepositories() {
         }
         if (!expanded) collapsedActiveProjects.delete(project.path);
         shellState.repoSignature = '';
-        renderRepositories();
+        renderRepositories(project.path);
       });
       toggle.classList.add('sc-repo-children-toggle');
       toggle.setAttribute('aria-expanded', String(expanded && !collapsedActiveProjects.has(project.path)));
@@ -225,7 +230,11 @@ function renderRepositories() {
     const children = available.filter(checkout => checkout !== root);
     row(project, root, children);
     if (!collapsedActiveProjects.has(project.path) && (expandedProjects.has(project.path) || children.some(item => item.path === state.checkout))) {
+      const start = items.childElementCount;
       for (const checkout of children) row(project, checkout, [], true);
+      if (project.path === animatedProject) {
+        for (const child of [...items.children].slice(start)) child.classList.add('sc-repo-linked-arriving');
+      }
     } else {
       for (const checkout of children) emitted.add(checkout.path);
     }

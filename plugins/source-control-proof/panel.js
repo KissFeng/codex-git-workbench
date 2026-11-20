@@ -5,7 +5,7 @@ const state = { checkout: null, status: null, selection: null, mode: 'diff', pro
 const pending = new Map();
 let requestId = 0, pickerSignature = '';
 const expandedProjects = new Set();
-let imageSignature = '', catalogRequest = null;
+let imageSignature = '', catalogRequest = null, displayedTextView = null;
 
 function shortPath(path) {
   const home = state.homeDirectory.replace(/[\\/]+$/, '');
@@ -34,6 +34,7 @@ function icon(name, className = '') {
     tree: 'M5 4v14h6M5 10h6m0-2h7v4h-7zm0 8h7v4h-7z', more: 'M4 12h.5m7.25 0h.5m7.25 0h.5',
     fetch: 'M12 3v12m-4-4 4 4 4-4m-11 8h14', pull: 'M12 4v13m-5-5 5 5 5-5M5 20h14',
     push: 'M12 20V7m-5 5 5-5 5 5M5 4h14', diff: 'M9 4H4v16h5m6-16h5v16h-5m-5-8h4',
+    copy: 'M8 8V4h12v12h-4M4 8h12v12H4Z',
     warning: 'M12 3 2 20h20ZM12 9v4m0 3h.01', discard: 'M9 7 4 12l5 5M4 12h11a5 5 0 0 0 5-5',
   });
   const path = document.createElementNS(svg.namespaceURI, 'path'); path.setAttribute('d', paths[name] || paths.file); svg.append(path);
@@ -124,6 +125,7 @@ function closePicker(restoreFocus = true) {
   if (restoreFocus) el('project').focus();
 }
 function emptyViewer(message) {
+  displayedTextView = null;
   uiText(el('file-title'), msg('Preview')); uiText(el('file-context'), msg('Select a file or commit'));
   el('code').classList.remove('sc-detail-diff');
   el('code').replaceChildren(); el('code').hidden = true;
@@ -142,13 +144,22 @@ function renderFiles() {
   for (const [key, title] of groups) {
     const rows = state.status?.[key] || [];
     if (!rows.length) continue;
-    const open = !collapsedFileGroups.has(key);
+    let open = !collapsedFileGroups.has(key);
+    let contents;
     const section = element('section', 'sc-group');
     const heading = element('h3', 'sc-group-heading');
     const toggle = control('', () => {
-      if (open) collapsedFileGroups.add(key);
-      else collapsedFileGroups.delete(key);
-      renderFiles();
+      open = !open;
+      if (open) {
+        collapsedFileGroups.delete(key);
+        if (!contents) {
+          contents = fileTreeItems(rows, key, file => workingFileRow(file, key));
+          contents.hidden = true;
+          section.append(contents);
+        }
+      } else collapsedFileGroups.add(key);
+      toggle.setAttribute('aria-expanded', String(open));
+      if (contents) setPanelContentVisible(contents, open);
     }, 'sc-group-toggle');
     toggle.append(icon('chevron'), element('span', '', msg(title)));
     toggle.setAttribute('aria-expanded', String(open));
@@ -165,7 +176,10 @@ function renderFiles() {
     bindContextMenu(heading, entries, { anchor: toggle });
     heading.append(toggle, actions);
     section.append(heading);
-    if (open) section.append(fileTreeItems(rows, key, file => workingFileRow(file, key)));
+    if (open) {
+      contents = fileTreeItems(rows, key, file => workingFileRow(file, key));
+      section.append(contents);
+    }
     rendered.append(section);
   }
   if (!rendered.childElementCount && state.status) rendered.append(element('p', 'sc-empty sc-clean', msg('Working tree clean')));
@@ -332,7 +346,7 @@ async function switchCheckout(checkout, { focusRepository = false } = {}) {
     restoreRailFocus(el('repository-list'), 'repo:' + state.checkout);
   }
 }
-function clearCode(message) { el('code').hidden = true; el('images').hidden = true; el('view-message').hidden = false; el('view-message').dataset.notice = 'false'; uiText(el('view-message'), message); }
+function clearCode(message) { displayedTextView = null; el('code').hidden = true; el('images').hidden = true; el('view-message').hidden = false; el('view-message').dataset.notice = 'false'; uiText(el('view-message'), message); }
 function formatBytes(size) { if (size < 1024) return size + ' B'; if (size < 1024 * 1024) return (size / 1024).toFixed(1) + ' KB'; return (size / (1024 * 1024)).toFixed(2) + ' MB'; }
 function renderImages(view) {
   el('code').hidden = true; el('view-message').hidden = true; el('images').hidden = false;
@@ -387,12 +401,28 @@ async function loadFile() {
   const token = ++state.viewRequest;
   el('code').classList.remove('sc-detail-diff');
   const args = { repoPath: state.checkout, ...state.selection, mode: state.mode === 'split' ? 'diff' : state.mode };
-  uiText(el('file-title'), args.path);
-  uiText(el('file-context'), msg(args.group === 'staged' ? 'Staged Changes' : args.group === 'untracked' ? 'Untracked file' : 'Working copy'));
-  try { const view = await callTool('git_file', args); if (token === state.viewRequest) renderCode(view); }
-  catch (error) { if (token === state.viewRequest) clearCode(error.message); }
+  if (el('file-title').textContent !== args.path) uiText(el('file-title'), args.path);
+  if (!displayedTextView) {
+    uiText(el('file-context'), msg(args.group === 'staged' ? 'Staged Changes' : args.group === 'untracked' ? 'Untracked file' : 'Working copy'));
+  }
+  try {
+    const view = await callTool('git_file', args);
+    if (token !== state.viewRequest) return;
+    const key = JSON.stringify([args.repoPath, args.path, args.group, state.mode, view.sourceLabel, view.message]);
+    if (view.kind !== 'image' && displayedTextView?.key === key && displayedTextView.text === view.text) return;
+    const arriving = !displayedTextView && el('code').hidden && el('images').hidden;
+    renderCode(view);
+    displayedTextView = view.kind === 'image' ? null : { key, text: view.text };
+    if (arriving) {
+      const surface = !el('code').hidden ? el('code') : !el('images').hidden ? el('images') : el('view-message');
+      animatePanelArrival(surface);
+    }
+  } catch (error) {
+    if (token === state.viewRequest) clearCode(error.message);
+  }
 }
 function setMode(mode) {
+  if (state.mode === mode && workbench.preview === 'file') return;
   state.mode = mode;
   for (const item of ['diff', 'split', 'source']) el(item + '-mode').setAttribute('aria-pressed', String(mode === item));
   el('code').scrollTop = 0; el('code').scrollLeft = 0; savePreference();

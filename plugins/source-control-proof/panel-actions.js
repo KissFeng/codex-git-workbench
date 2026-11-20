@@ -1,15 +1,19 @@
 function copyText(value) {
-  if (!navigator.clipboard) {
+  const showCopyField = () => {
     const text = element('textarea', 'sc-input');
     text.value = value;
     text.readOnly = true;
     openAction('Copy text', text);
+    text.focus();
     text.select();
+  };
+  if (!navigator.clipboard) {
+    showCopyField();
     return;
   }
-  navigator.clipboard.writeText(value)
+  return navigator.clipboard.writeText(value)
     .then(() => uiText(el('staging-message'), msg('Copied')))
-    .catch(error => showError(error.message));
+    .catch(showCopyField);
 }
 
 function openAction(title, content) {

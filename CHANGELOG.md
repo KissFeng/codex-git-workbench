@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.1
+
+- Show the commit body and line counts in a selectable hover card with a copy action for the full hash.
+- Toggle changed files from the entire commit row and update only the affected graph entry.
+- Add short transitions for view changes, overlays and expandable sections, with reduced-motion support.
+
 ## 0.8.0
 
 - Add a persistent Simplified Chinese and English language selector for the Source Control panel.

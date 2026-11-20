@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { gitBlame, gitCompare, gitHistory, gitHistoryDetail } from '../plugins/source-control-proof/git-history.mjs';
-import { callWorkbenchTool } from '../plugins/source-control-proof/git-tools.mjs';
+import { callWorkbenchTool, workbenchTools } from '../plugins/source-control-proof/git-tools.mjs';
 
 async function repository(t) {
   const repoPath = await mkdtemp(join(tmpdir(), 'codex-git-history-'));
@@ -195,6 +195,64 @@ test('commit detail reads root patches, full messages and a selected merge paren
   assert.deepEqual(secondParent.files, [{ path: 'story.txt', status: 'M' }]);
   assert.match(secondParent.diff, /^\+local$/m);
   await assert.rejects(gitHistoryDetail({ repoPath, commit: head, parent: base }), /parent/i);
+});
+
+test('commit line stats calculate root and first-parent merge diffs', async t => {
+  const { repoPath, git, commit } = await repository(t);
+  const root = await commit('base.txt', 'one\ntwo\nthree\n', 'Root');
+  git('switch', '-c', 'side');
+  await commit('side.txt', 'one\ntwo\n', 'Side');
+  git('switch', 'main');
+  await commit('main.txt', 'one\n', 'Main');
+  git('merge', '--no-ff', '-m', 'Merge side', 'side');
+
+  const stats = commit => callWorkbenchTool('git_history_stats', { repoPath, commit });
+  assert.deepEqual(await stats(root), { additions: 3, deletions: 0, binaryFiles: 0, filesChanged: 1, message: '' });
+  assert.deepEqual(await stats('HEAD'), { additions: 2, deletions: 0, binaryFiles: 0, filesChanged: 1, message: '' });
+});
+
+test('commit line stats sum text changes across literal rename paths and count binary changes separately', async t => {
+  const { repoPath, git, write, commit } = await repository(t);
+  const oldPath = '19\t23\told\nname.txt';
+  const newPath = '42\t56\tnew\nname.txt';
+  await write(oldPath, 'unchanged\n');
+  await write('image.dat', Buffer.from([0, 1]));
+  git('add', '-A');
+  await commit('text.txt', 'same\nremove me\n', 'Base');
+  await rename(join(repoPath, oldPath), join(repoPath, newPath));
+  await write('image.dat', Buffer.from([0, 2]));
+  await write('text.txt', 'same\nadd one\nadd two\nadd three\n');
+  git('add', '-A');
+  git('commit', '-m', 'Update', '-m', '第一段\n第二行', '-m', '12\t34\t第二段');
+
+  const args = { repoPath, commit: 'HEAD' };
+  assert.deepEqual(await callWorkbenchTool('git_history_stats', args), {
+    additions: 3, deletions: 1, binaryFiles: 1, filesChanged: 3, message: '第一段\n第二行\n\n12\t34\t第二段',
+  });
+  git('commit', '--allow-empty', '--allow-empty-message', '-m', '');
+  assert.deepEqual(await callWorkbenchTool('git_history_stats', args), {
+    additions: 0, deletions: 0, binaryFiles: 0, filesChanged: 0, message: '',
+  });
+});
+
+test('commit line stats bound the UTF-8 commit body without splitting a character', async t => {
+  const { repoPath, git } = await repository(t);
+  const prefix = 'a'.repeat(64 * 1024 - 1);
+  git('commit', '--allow-empty', '-m', 'Subject', '-m', prefix + '结尾');
+  const stats = await callWorkbenchTool('git_history_stats', { repoPath, commit: 'HEAD' });
+  assert.equal(stats.message.length, prefix.length);
+  assert.ok(stats.message === prefix);
+});
+
+test('commit line stats require a commit revision and are exposed as a read-only panel tool', async t => {
+  const { repoPath, commit } = await repository(t);
+  await commit('file.txt', 'one\n', 'Root');
+  const stats = workbenchTools.find(tool => tool.name === 'git_history_stats');
+  assert.deepEqual(stats?._meta.ui.visibility, ['app']);
+  assert.equal(stats.annotations.readOnlyHint, true);
+  await assert.rejects(callWorkbenchTool('git_history_stats', { repoPath }), /missing commit/i);
+  await assert.rejects(callWorkbenchTool('git_history_stats', { repoPath, commit: '--all' }), /invalid Git revision/i);
+  await assert.rejects(callWorkbenchTool('git_history_stats', { repoPath, commit: 'missing-ref' }), /does not identify a commit/i);
 });
 
 test('detail and comparison report rename paths and patch them together', async t => {

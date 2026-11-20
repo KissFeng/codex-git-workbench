@@ -108,3 +108,95 @@ test('command lists localize actions but preserve Git labels with the same text'
   });
   assert.deepEqual(shown.map(item => item.label), ['获取', 'Fetch']);
 });
+
+test('interactive commit card prefers the right side and remains inside a narrow panel', async () => {
+  const source = await panelSource('panel-overlays.js');
+  const anchor = { left: 10, top: 130, right: 310, bottom: 158 };
+  const viewport = { left: 0, top: 0, width: 780, height: 300 };
+  const options = { tooltip: true, placement: 'side' };
+  const position = evaluate(source, 'workbenchOverlayPosition({ width: 370, height: 100 }, anchor, viewport, options)', { anchor, viewport, options });
+  assert.equal(position.left, 316);
+  assert.equal(position.top, 130);
+  viewport.width = 350;
+  const fallback = evaluate(source, 'workbenchOverlayPosition({ width: 300, height: 100 }, anchor, viewport, options)', { anchor, viewport, options });
+  assert.equal(fallback.top, 164);
+  assert.ok(fallback.left + 300 <= viewport.width - 8);
+});
+
+test('interactive hover keeps the card open across the pointer gap and focuses Copy on Tab', async () => {
+  const source = await panelSource('panel-overlays.js');
+  const timers = new Map();
+  let next = 0;
+  function node() {
+    return {
+      listeners: {}, children: [], attributes: new Map(), isConnected: true,
+      setAttribute(name, value) { this.attributes.set(name, value); },
+      getAttribute(name) { return this.attributes.get(name) ?? null; },
+      removeAttribute(name) { this.attributes.delete(name); },
+      addEventListener(type, listener) { this.listeners[type] = listener; },
+      contains(target) { return target === this || this.children.includes(target); },
+      closest() { return null; },
+      append(child) { this.children.push(child); },
+      querySelector() { return this.children[0]; },
+      remove() { this.isConnected = false; },
+    };
+  }
+  const anchor = node();
+  const copy = node();
+  const card = node();
+  const document = {
+    activeElement: anchor, addEventListener() {},
+    body: { append() {} },
+  };
+  copy.focus = () => { document.activeElement = copy; };
+  anchor.focus = () => { document.activeElement = anchor; };
+  const fireTimers = () => {
+    for (const [id, run] of [...timers]) if (timers.delete(id)) run();
+  };
+  evaluate(source, `
+    positionWorkbenchOverlay = () => {};
+    monitorWorkbenchOverlay = () => ({ disconnect() {} });
+    bindTooltip(anchor, () => copy, { interactive: true, placement: 'side' });
+  `, {
+    anchor, copy, document, element: () => card, Node: Object,
+    uiAttr: (node, name, value) => node.setAttribute(name, value), msg: value => value,
+    setTimeout: run => { timers.set(++next, run); return next; }, clearTimeout: id => timers.delete(id),
+  });
+  anchor.listeners.pointerenter();
+  fireTimers();
+  assert.equal(card.getAttribute('role'), 'dialog');
+  anchor.listeners.pointerleave({ relatedTarget: null });
+  card.listeners.pointerenter();
+  fireTimers();
+  assert.equal(card.isConnected, true);
+  anchor.listeners.keydown({ key: 'Tab', preventDefault() {} });
+  assert.equal(document.activeElement, copy);
+  card.listeners.keydown({ key: 'Escape', preventDefault() {}, stopPropagation() {} });
+  assert.equal(card.isConnected, false);
+  assert.equal(document.activeElement, anchor);
+});
+
+test('copy opens and selects the full hash when desktop clipboard permission is unavailable', async () => {
+  const source = await panelSource('panel-actions.js');
+  const hash = '0123456789abcdef0123456789abcdef01234567';
+  const field = {
+    focus() { this.focused = true; },
+    select() { this.selected = true; },
+  };
+  let copied;
+  await evaluate(source, `
+    openAction = (_title, field) => display(field);
+    copyText(hash);
+  `, {
+    hash, element: () => field,
+    navigator: { clipboard: { writeText: async value => {
+      copied = value;
+      throw new Error('Document is not focused');
+    } } },
+    display: value => assert.equal(value, field),
+  });
+  assert.equal(copied, hash);
+  assert.equal(field.value, hash);
+  assert.equal(field.readOnly, true);
+  assert.equal(field.focused && field.selected, true);
+});

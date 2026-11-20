@@ -6,14 +6,14 @@ Git Workbench manages local Git checkouts from a Codex desktop panel. It is base
 
 Use Codex desktop with local MCP Apps, Git 2.35 or later and Node.js 24 or later on PATH. The plugin uses the system Git and has no npm dependencies.
 
-From an authenticated checkout of this repository:
+Install the tagged version from GitHub.
 
 ```sh
-codex plugin marketplace add "$PWD"
+codex plugin marketplace add KissFeng/codex-git-workbench --ref v0.8.1
 codex plugin add codex-git-workbench@kissfeng-git-tools
 ```
 
-Open **Git Workbench** from the panel picker. Reopen Codex if the new panel or version does not appear. To update or roll back, check out the desired Git tag in the marketplace checkout, rerun the install command and reopen the panel.
+Open **Git Workbench** from the panel picker. Reopen Codex if the new panel or version does not appear. For local development, run `codex plugin marketplace add "$PWD"` from a repository checkout, then install the plugin using the same identifier.
 
 ## Workflows
 

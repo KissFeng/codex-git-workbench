@@ -1,5 +1,6 @@
 const commitGraph = {
-  scope: 'all', refs: [], expanded: new Set(), details: new Map(), loading: null,
+  scope: 'all', refs: [], expanded: new Set(), details: new Map(), rows: new Map(), loading: null,
+  stats: new Map(), statsLoading: new Map(),
   error: null, notice: '', locating: null, located: null, referencePicker: null,
 };
 const historyScopeLabels = {
@@ -263,8 +264,8 @@ function historyGraphThread(row) {
 
 function historyRowDetails(row, refs, label) {
   const content = element('div', 'sc-history-tooltip');
-  content.append(element('strong', '', label));
   if (row.comparison) {
+    content.append(element('strong', '', label));
     const branch = row.kind === 'outgoing' ? state.status.branch : state.status.upstream;
     const count = msg(row.count === 1 ? '{count} commit' : '{count} commits', { count: row.count });
     content.append(element('span', '', msg('{branch} · {count}', { branch: branch || 'HEAD', count })));
@@ -273,19 +274,75 @@ function historyRowDetails(row, refs, label) {
     const { author, date, id, relation } = row.commit;
     const relationText = relation === 'ahead' ? msg('Outgoing') : relation === 'behind' ? msg('Incoming') : '';
     const details = [author, date ? msg('{date}', { date: new Date(date) }) : '', relationText].filter(Boolean);
-    const metadata = element('span');
+    const metadata = element('span', 'sc-history-tooltip-meta');
     for (const [index, detail] of details.entries()) {
       if (index) metadata.append(' · ');
       metadata.append(element('span', '', detail));
     }
-    content.append(metadata, element('code', '', id));
+    if (details.length) content.append(metadata);
+    content.append(element('strong', '', label));
+    const body = element('p', 'sc-history-tooltip-body');
+    body.hidden = true;
+    const stats = element('div', 'sc-history-tooltip-stats', msg('Loading line counts…'));
+    content.append(body, stats);
+    loadHistoryStats(id, body, stats);
     if (refs.length) {
       const badges = element('div', 'sc-history-tooltip-refs');
       badges.append(...refs.map(ref => element('span', `sc-ref sc-ref-${ref.kind}`, ref.name)));
       content.append(badges);
     }
+    const footer = element('div', 'sc-history-tooltip-footer');
+    const copy = control('', () => copyText(id), 'sc-history-tooltip-copy');
+    uiAttr(copy, 'aria-label', msg('Copy commit hash'));
+    copy.append(icon('copy'));
+    footer.append(element('code', '', id.slice(0, 8)), copy);
+    content.append(footer);
   }
   return content;
+}
+
+function readHistoryStats(repoPath, commit) {
+  const key = JSON.stringify([repoPath, commit]);
+  const { stats, statsLoading } = commitGraph;
+  if (stats.has(key)) {
+    const cached = stats.get(key);
+    stats.delete(key);
+    stats.set(key, cached);
+    return cached;
+  }
+  if (!statsLoading.has(key)) {
+    const request = callTool('git_history_stats', { repoPath, commit }).then(result => {
+      stats.set(key, result);
+      if (stats.size > 128) stats.delete(stats.keys().next().value);
+      return result;
+    }).finally(() => statsLoading.delete(key));
+    statsLoading.set(key, request);
+  }
+  return statsLoading.get(key);
+}
+
+async function loadHistoryStats(commit, body, stats) {
+  const { checkout, epoch } = state;
+  const current = () => stats.isConnected && state.checkout === checkout && state.epoch === epoch;
+  try {
+    const { additions, deletions, binaryFiles, filesChanged, message } = await readHistoryStats(checkout, commit);
+    if (!current()) return;
+    if (message?.trim()) {
+      body.textContent = message.trim();
+      body.hidden = false;
+    }
+    uiText(stats, '');
+    if (filesChanged != null) {
+      stats.append(element('span', '', msg(filesChanged === 1 ? '{count} file changed' : '{count} files changed', { count: filesChanged })));
+    }
+    stats.append(
+      element('span', 'sc-history-tooltip-additions', msg(additions === 1 ? '+{count} line added' : '+{count} lines added', { count: additions })),
+      element('span', 'sc-history-tooltip-deletions', msg(deletions === 1 ? '−{count} line deleted' : '−{count} lines deleted', { count: deletions })),
+    );
+    if (binaryFiles) stats.append(element('span', '', msg(binaryFiles === 1 ? '{count} binary file' : '{count} binary files', { count: binaryFiles })));
+  } catch {
+    if (current()) uiText(stats, msg('Line counts unavailable'));
+  }
 }
 
 async function readHistoryCommit(commit) {
@@ -305,41 +362,108 @@ async function readHistoryCommit(commit) {
     } finally {
       if (epoch === state.epoch) {
         delete entry.pending;
-        if (commitGraph.expanded.has(commit)) renderHistory();
+        if (commitGraph.expanded.has(commit)) updateHistoryFiles(commitGraph.rows.get(commit));
       }
     }
   })();
-  if (commitGraph.expanded.has(commit)) renderHistory();
+  if (commitGraph.expanded.has(commit)) updateHistoryFiles(commitGraph.rows.get(commit));
   return entry.pending;
 }
 
-function toggleHistoryFiles(commit) {
-  if (commitGraph.expanded.delete(commit)) {
-    renderHistory();
-    return;
-  }
-  commitGraph.expanded.add(commit);
-  if (commitGraph.details.has(commit)) renderHistory();
-  else readHistoryCommit(commit);
+function selectHistoryCommit(commit, path) {
+  const previous = workbench.historySelection?.commit;
+  if (previous && previous !== commit) commitGraph.rows.get(previous)?.button.setAttribute('aria-pressed', 'false');
+  workbench.historySelection = commit ? { commit, path } : null;
+  if (commit) commitGraph.rows.get(commit)?.button.setAttribute('aria-pressed', 'true');
 }
 
-function renderHistoryFiles(row) {
+function setHistoryExpanded(record, expanded) {
+  const { row, button, toggle, subject } = record;
+  for (const control of [button, toggle]) {
+    control.setAttribute('aria-expanded', String(expanded));
+    if (expanded) control.setAttribute('aria-controls', 'history-files-' + row.id);
+    else control.removeAttribute('aria-controls');
+  }
+  uiAttr(toggle, 'aria-label', msg(expanded ? 'Collapse changed files for {subject}' : 'Expand changed files for {subject}', { subject }));
+}
+
+function toggleHistoryFiles(commit) {
+  const record = commitGraph.rows.get(commit);
+  if (!record) return;
+  const expanded = !commitGraph.expanded.delete(commit);
+  if (expanded) {
+    commitGraph.expanded.add(commit);
+    if (commitGraph.details.has(commit)) updateHistoryFiles(record);
+    else void readHistoryCommit(commit);
+  } else if (record.files.contains(document.activeElement)) {
+    record.button.focus({ preventScroll: true });
+  }
+  setHistoryExpanded(record, expanded);
+  animateHistoryFiles(record, expanded);
+}
+
+function animateHistoryFiles(record, expanded) {
+  const { files, list } = record;
+  files.inert = !expanded;
+  const finish = () => {
+    record.motion?.cancel();
+    record.motion = null;
+    if (files.inert) {
+      files.remove();
+      record.files = null;
+    }
+  };
+  if (!list.animate || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    finish();
+    return;
+  }
+  if (record.motion) {
+    record.motion.reverse();
+    return;
+  }
+  const duration = 120;
+  const motion = list.animate([
+    { opacity: 0, transform: 'translateY(-3px)' },
+    { opacity: 1, transform: 'translateY(0)' },
+  ], { duration, easing: 'ease-out', fill: 'both' });
+  if (!expanded) {
+    motion.currentTime = duration;
+    motion.reverse();
+  }
+  motion.onfinish = finish;
+  record.motion = motion;
+}
+
+function updateHistoryFiles(record) {
+  if (!record) return;
+  const { row, entry, button } = record;
   const { id } = row;
-  const files = element('div', 'sc-history-files');
-  files.id = 'history-files-' + id;
-  files.append(historyGraphThread(row));
-  const entry = commitGraph.details.get(id);
-  if (!entry || entry.pending) {
+  if (!record.files) {
+    record.files = element('div', 'sc-history-files');
+    record.files.id = 'history-files-' + id;
+    record.files.style.setProperty('--history-graph-width', historyGraphWidth(row.columns) + 'px');
+    record.list = element('div', 'sc-history-file-list');
+    record.files.append(historyGraphThread(row), record.list);
+    entry.append(record.files);
+  }
+  if (record.list.contains(document.activeElement)) button.focus({ preventScroll: true });
+  record.list.replaceChildren(renderHistoryFiles(id));
+}
+
+function renderHistoryFiles(id) {
+  const files = document.createDocumentFragment();
+  const detail = commitGraph.details.get(id);
+  if (!detail || detail.pending) {
     files.append(element('span', 'sc-muted', msg('Loading changed files…')));
     return files;
   }
-  if (entry.error) {
+  if (detail.error) {
     const retry = control(msg('Retry'), () => void readHistoryCommit(id));
     retry.dataset.focusKey = 'history-retry:' + id;
-    files.append(element('span', 'sc-muted', entry.error), retry);
+    files.append(element('span', 'sc-muted', detail.error), retry);
     return files;
   }
-  for (const file of entry.result.files) {
+  for (const file of detail.result.files) {
     const button = control('', () => openCommit(id, file.path), 'sc-detail-file sc-history-file');
     button.dataset.focusKey = JSON.stringify(['history-file', id, file.path]);
     const status = element('span', 'sc-file-status', file.status);
@@ -353,8 +477,8 @@ function renderHistoryFiles(row) {
     ]);
     files.append(button);
   }
-  if (!entry.result.files.length) files.append(element('span', 'sc-muted', msg('No changed files.')));
-  if (entry.result.filesTruncated) files.append(element('span', 'sc-muted', msg('Additional files omitted.')));
+  if (!detail.result.files.length) files.append(element('span', 'sc-muted', msg('No changed files.')));
+  if (detail.result.filesTruncated) files.append(element('span', 'sc-muted', msg('Additional files omitted.')));
   return files;
 }
 
@@ -398,21 +522,26 @@ function historyRow(row) {
   item.dataset.kind = kind;
   item.dataset.located = String(commitGraph.located === id);
   item.style.setProperty('--history-graph-width', historyGraphWidth(row.columns) + 'px');
-  const button = control('', () => {
+  const activate = () => {
     if (comparison) return openCompare(comparison);
-    workbench.historySelection = { commit: id, path: workbench.historyPath };
-    if (!commitGraph.expanded.has(id)) toggleHistoryFiles(id);
-    else renderHistory();
-  }, 'sc-history-commit');
+    selectHistoryCommit(id, workbench.historyPath);
+    toggleHistoryFiles(id);
+  };
+  const button = control('', activate, 'sc-history-commit');
   button.dataset.focusKey = 'history:' + id;
   if (!comparison) {
     button.setAttribute('aria-pressed', String(workbench.historySelection?.commit === id));
     const toggle = control('', () => toggleHistoryFiles(id), 'sc-history-expand');
     toggle.dataset.focusKey = 'history-expand:' + id;
-    toggle.setAttribute('aria-expanded', String(expanded));
-    if (expanded) toggle.setAttribute('aria-controls', 'history-files-' + id);
     const subject = commit.subject?.slice(0, 100) || label;
-    uiAttr(toggle, 'aria-label', msg(expanded ? 'Collapse changed files for {subject}' : 'Expand changed files for {subject}', { subject }));
+    const record = { row, entry, button, toggle, subject };
+    commitGraph.rows.set(id, record);
+    setHistoryExpanded(record, expanded);
+    item.onclick = event => {
+      if (event.target !== item) return;
+      button.focus({ preventScroll: true });
+      activate();
+    };
     toggle.append(icon('chevron'));
     item.append(toggle);
   }
@@ -431,7 +560,7 @@ function historyRow(row) {
     if (badgesToShow.length > 2) badges.append(element('span', 'sc-history-ref-count', '+' + (badgesToShow.length - 2)));
     button.append(badges);
   }
-  bindTooltip(button, () => historyRowDetails(row, refs, label));
+  bindTooltip(button, () => historyRowDetails(row, refs, label), comparison ? undefined : { interactive: true, placement: 'side' });
   bindContextMenu(button, () => historyRowActions(row));
   item.addEventListener('contextmenu', event => {
     event.preventDefault();
@@ -439,11 +568,7 @@ function historyRow(row) {
   });
   item.append(button);
   entry.append(item);
-  if (expanded) {
-    const files = renderHistoryFiles(row);
-    files.style.setProperty('--history-graph-width', historyGraphWidth(row.columns) + 'px');
-    entry.append(files);
-  }
+  if (expanded) updateHistoryFiles(commitGraph.rows.get(id));
   return entry;
 }
 
@@ -504,6 +629,7 @@ function renderHistory() {
   const left = scroller.scrollLeft;
   const history = workbench.history;
   const fragment = document.createDocumentFragment();
+  commitGraph.rows.clear();
   if (history) {
     for (const row of buildHistoryGraph(history.commits, { ...history, path: workbench.historyPath })) {
       fragment.append(historyRow(row));

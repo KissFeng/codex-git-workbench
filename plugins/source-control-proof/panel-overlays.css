@@ -103,3 +103,21 @@
 }
 .sc-tooltip :is(strong, small) { display: block; }
 .sc-tooltip small { color: var(--muted); font-size: inherit; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .sc-workbench-overlay, .sc-dialog[open] { animation: sc-workspace-enter 130ms ease-out both; }
+}
+
+.sc-commit-popover {
+  z-index: 50;
+  width: min(420px, var(--sc-overlay-width, calc(100vw - 16px)));
+  overflow: auto;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  overscroll-behavior: contain;
+  user-select: text;
+}
+.sc-commit-popover .sc-history-tooltip { gap: 6px; padding: 9px 11px; }
+.sc-commit-popover .sc-history-tooltip-stats { padding-top: 5px; border-top: 1px solid var(--border); }
+.sc-commit-popover .sc-history-tooltip-footer code { color: var(--accent); }

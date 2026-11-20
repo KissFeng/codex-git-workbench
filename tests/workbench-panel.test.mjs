@@ -18,7 +18,7 @@ test('panel helpers build aligned diff rows and a literal path tree', async () =
 test('workbench tools restrict operations to the panel and reject unknown arguments', async () => {
   const { handle } = await import('../plugins/source-control-proof/server.mjs');
   const { tools } = await handle('tools/list');
-  for (const name of ['git_history', 'git_history_detail', 'git_compare', 'git_blame', 'git_patch', 'git_apply_patch', 'git_change', 'git_commit', 'git_commit_template', 'git_references', 'git_operation', 'git_conflict']) {
+  for (const name of ['git_history', 'git_history_detail', 'git_history_stats', 'git_compare', 'git_blame', 'git_patch', 'git_apply_patch', 'git_change', 'git_commit', 'git_commit_template', 'git_references', 'git_operation', 'git_conflict']) {
     const tool = tools.find(item => item.name === name);
     assert.ok(tool, name);
     assert.deepEqual(tool._meta.ui.visibility, ['app']);
@@ -74,6 +74,9 @@ test('MCP panel tools stage selected new lines, commit the index and read the sa
   const detail = await tool('git_history_detail', { commit: result.head, path: file.path });
   assert.match(detail.diff, /\+selected/);
   assert.doesNotMatch(detail.diff, /kept in working copy/);
+  assert.deepEqual(await tool('git_history_stats', { commit: result.head }), {
+    additions: 1, deletions: 0, binaryFiles: 0, filesChanged: 1, message: '',
+  });
 });
 
 test('SCM primary action distinguishes staged, unstaged, conflicts, and tracking', async () => {

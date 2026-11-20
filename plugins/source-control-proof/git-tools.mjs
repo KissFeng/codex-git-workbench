@@ -24,6 +24,7 @@ const definitions = [
   }],
   ['git_history_detail', 'Read a commit and its changes', history, 'gitHistoryDetail',
     { commit: string, path: string, parent: { anyOf: [string, integer] } }, ['commit']],
+  ['git_history_stats', 'Read commit change totals and the Git message body', history, 'gitHistoryStats', { commit: string }, ['commit']],
   ['git_compare', 'Compare Git references or the working copy', history, 'gitCompare',
     { from: string, to: string, path: string, mergeBase: boolean }, ['from']],
   ['git_blame', 'Read line attribution', history, 'gitBlame', { path: string, ref: string }, ['path']],

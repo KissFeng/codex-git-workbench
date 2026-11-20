@@ -1,6 +1,7 @@
 export const shellMessages = {
   'Git Workbench': 'Git 工作台',
   'Interface language': '界面语言',
+  'Commit information': '提交信息',
   'Source Control': '源代码管理',
   'Source control': '源代码管理',
   'Source control actions': '源代码管理操作',

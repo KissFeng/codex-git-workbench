@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { runInNewContext } from 'node:vm';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { setPanelContentVisible } from '../plugins/source-control-proof/panel-motion.mjs';
 import { scmPrimaryAction, scmSplitRatio } from '../plugins/source-control-proof/panel-model.mjs';
 
 const panelSection = file => readFile(new URL('../plugins/source-control-proof/' + file, import.meta.url), 'utf8');
@@ -47,6 +48,7 @@ function shellFixture() {
   const calls = [];
   const context = {
     document, el: node, scmSplitRatio, scmPrimaryAction,
+    setPanelContentVisible, panelMotionEnabled: () => false, animatePanelArrival() {},
     matchMedia: () => ({ matches: true, addEventListener() {} }),
     loadHistory: () => calls.push('history'),
     savePreference: () => calls.push('save'),

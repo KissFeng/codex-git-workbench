@@ -23,6 +23,7 @@
   min-width: calc(var(--history-toggle) + var(--history-graph-width) + 72px);
   border-radius: 5px;
 }
+.sc-history-item:not([data-kind=incoming], [data-kind=outgoing]) { cursor: pointer; }
 .sc-history-item:hover { background: var(--hover); }
 .sc-history-item:has([aria-pressed=true]), .sc-history-item[data-located=true] { background: var(--selection); }
 .sc-history-item[data-located=true] { box-shadow: inset 2px 0 var(--accent); }
@@ -38,6 +39,9 @@
 }
 .sc-history-expand svg { width: 12px; height: 12px; transform: rotate(-90deg); }
 .sc-history-expand[aria-expanded=true] svg { transform: rotate(0); }
+@media (prefers-reduced-motion: no-preference) {
+  .sc-history-expand svg { transition: transform 120ms ease-out; }
+}
 .sc-history-commit {
   grid-column: 2;
   display: flex;
@@ -101,14 +105,12 @@
 
 .sc-history-files {
   position: relative;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  align-items: start;
   min-width: calc(21px + var(--history-graph-width) + 72px);
   padding: 2px 5px 2px calc(25px + var(--history-graph-width));
 }
-.sc-history-files > .sc-muted { padding: 3px 4px; }
-.sc-history-files > .sc-control { justify-self: start; padding-block: 3px; min-height: 22px; }
+.sc-history-file-list { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; }
+.sc-history-file-list > .sc-muted { padding: 3px 4px; }
+.sc-history-file-list > .sc-control { justify-self: start; padding-block: 3px; min-height: 22px; }
 .sc-history-file { min-height: 24px; padding-block: 1px; font-size: 11px; }
 .sc-history-thread {
   position: absolute;
@@ -119,6 +121,15 @@
 }
 .sc-history-tooltip { display: grid; gap: 4px; }
 .sc-history-tooltip > code { overflow-wrap: anywhere; }
+.sc-history-tooltip-meta, .sc-history-tooltip-stats { color: var(--muted); }
+.sc-history-tooltip-body { margin: 0; max-height: min(36vh, 180px); overflow: auto; white-space: pre-wrap; user-select: text; }
+.sc-history-tooltip-stats { display: flex; flex-wrap: wrap; gap: 2px 8px; }
+.sc-history-tooltip-additions { color: var(--accent); }
+.sc-history-tooltip-deletions { color: light-dark(#a42538, #ff9eac); }
+.sc-history-tooltip-footer { display: flex; align-items: center; gap: 4px; margin-top: 2px; padding-top: 2px; border-top: 1px solid var(--border); }
+.sc-history-tooltip-copy { display: grid; place-items: center; width: 24px; height: 23px; padding: 0; border-radius: 4px; color: var(--muted); }
+.sc-history-tooltip-copy:focus-visible { outline-offset: -2px; }
+.sc-history-tooltip-copy svg { width: 13px; height: 13px; }
 .sc-history-tooltip-refs { display: flex; flex-wrap: wrap; gap: 3px; min-width: 0; }
 .sc-history-tooltip-refs .sc-ref { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
 

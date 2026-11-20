@@ -112,6 +112,7 @@ function initializePanelLanguage(select) {
   setPanelLocale(select.value, document);
   select.addEventListener('change', () => {
     setPanelLocale(select.value, document);
+    animatePanelArrival(select);
     writePanelLanguage(panelLanguage, storage);
     window.openai?.setWidgetState?.({ ...window.openai.widgetState, language: panelLanguage });
   });

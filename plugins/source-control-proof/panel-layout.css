@@ -28,9 +28,22 @@ body { padding: 0; }
   background: var(--surface);
 }
 .sc-rail-header { padding: 7px 8px 7px 12px; border-bottom: 1px solid var(--border); }
+.sc-language-control { position: relative; display: inline-flex; }
+.sc-language-control::after {
+  content: '';
+  position: absolute;
+  inset: 50% 10px auto auto;
+  width: 5px;
+  height: 5px;
+  border: solid currentColor;
+  border-width: 0 1.5px 1.5px 0;
+  transform: translateY(-70%) rotate(45deg);
+  pointer-events: none;
+}
 .sc-language-select {
+  appearance: none;
   max-width: 8em;
-  padding: 3px 4px;
+  padding: 3px 23px 3px 7px;
   border: 1px solid var(--border);
   border-radius: 5px;
   background: var(--surface);
@@ -144,6 +157,7 @@ body { padding: 0; }
 #commit-options { display: grid; place-items: center; padding: 3px 7px; }
 #commit-options svg { width: 14px; height: 14px; }
 .sc-group { padding: 0 4px 4px; }
+.sc-group-toggle { flex: 1; }
 .sc-group-heading { display: flex; align-items: center; justify-content: space-between; padding: 2px 3px; color: var(--muted); }
 .sc-group-actions .sc-icon-button { width: 22px; min-height: 22px; }
 .sc-file-row { position: relative; padding: 0 3px; gap: 3px; border-radius: 4px; }
@@ -187,4 +201,16 @@ body { padding: 0; }
 @media (max-width: 300px) {
   .sc-graph-toolbar { flex-wrap: wrap; justify-content: flex-end; flex-shrink: 1; }
   .sc-file-actions .sc-icon-button { width: 18px; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .sc-region-toggle svg, .sc-group-toggle svg, .sc-folder-toggle svg, .sc-repo-children-toggle svg {
+    transition: transform 140ms ease-out;
+  }
+  .sc-repo-row > .sc-repo-menu, .sc-file-actions { transition: opacity 120ms ease-out; }
+  .sc-repo-linked-arriving { animation: sc-workspace-enter 140ms ease-out both; }
+}
+@keyframes sc-workspace-enter {
+  from { opacity: 0; transform: translateY(-3px); }
+  to { opacity: 1; transform: translateY(0); }
 }

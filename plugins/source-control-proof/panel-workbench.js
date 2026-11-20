@@ -21,7 +21,7 @@ function control(text, onClick, className = 'sc-control') {
 function resetPreview() {
   workbench.preview = 'file';
   workbench.patch = null;
-  workbench.historySelection = null;
+  selectHistoryCommit(null);
   el('patch-controls').hidden = true;
   el('detail').hidden = true;
   el('file-view-modes').hidden = false;
@@ -109,7 +109,14 @@ async function performAction(tool, args, label) {
 function selectWorkingFile(file, group) {
   state.selection = { path: file.path, group };
   resetPreview();
-  renderFiles();
+  const files = el('files');
+  const previous = files.querySelector('.sc-file-button[aria-pressed=true]');
+  previous?.setAttribute('aria-pressed', 'false');
+  if (previous) previous.parentElement.dataset.selected = 'false';
+  const selected = [...files.querySelectorAll('.sc-file-button')].find(button =>
+    button.dataset.path === file.path && button.dataset.group === group);
+  selected?.setAttribute('aria-pressed', 'true');
+  if (selected) selected.parentElement.dataset.selected = 'true';
   clearCode(msg('Loading file…'));
   el('code').scrollTop = 0;
   if (group === 'conflicts') openConflict();
@@ -130,22 +137,30 @@ function fileTreeItems(files, group, makeFileRow) {
       } else {
         const key = group + '/' + item.path;
         const entry = element('li', 'sc-folder');
-        const open = !workbench.folders.has(key);
+        let open = !workbench.folders.has(key);
+        let children;
+        const makeChildren = () => {
+          children = element('ul');
+          appendItems(children, item.children);
+          entry.append(children);
+        };
         const toggle = control(item.name, () => {
-          if (open) workbench.folders.add(key);
-          else workbench.folders.delete(key);
-          renderFiles();
-          [...el('files').querySelectorAll('.sc-folder-toggle')].find(button => button.dataset.folder === key)?.focus({ preventScroll: true });
+          open = !open;
+          if (open) {
+            workbench.folders.delete(key);
+            if (!children) {
+              makeChildren();
+              children.hidden = true;
+            }
+          } else workbench.folders.add(key);
+          toggle.setAttribute('aria-expanded', String(open));
+          if (children) setPanelContentVisible(children, open);
         }, 'sc-folder-toggle');
         toggle.dataset.folder = key;
         toggle.setAttribute('aria-expanded', String(open));
         toggle.prepend(icon('chevron'));
         entry.append(toggle);
-        if (open) {
-          const children = element('ul');
-          appendItems(children, item.children);
-          entry.append(children);
-        }
+        if (open) makeChildren();
         parent.append(entry);
       }
     }
@@ -243,8 +258,7 @@ async function openCommit(commit, path = null, parent) {
   const title = msg('Commit {hash}', { hash: commit.slice(0, 8) });
   const subtitle = msg('History');
   const token = openDetail(title, subtitle, 'history');
-  workbench.historySelection = { commit, path };
-  renderHistory();
+  selectHistoryCommit(commit, path);
   try {
     const result = await callTool('git_history_detail', { repoPath: state.checkout, commit, ...(path ? { path } : {}), ...(parent ? { parent } : {}) });
     if (token !== state.viewRequest) return;

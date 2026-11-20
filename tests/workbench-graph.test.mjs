@@ -82,10 +82,11 @@ test('visible refs prioritize current branch and upstream and deduplicate tags',
 
 const historyPanelSource = readFileSync(new URL('../plugins/source-control-proof/panel-history.js', import.meta.url), 'utf8');
 
-function historyPanel() {
+function historyPanel({ renderRows = false } = {}) {
   const nodes = new Map();
   const requests = [];
   const bindings = new Map();
+  const copied = [];
   let translate = key => key;
   const text = value => value?.key
     ? translate(value.key).replace(/\{(\w+)\}/g, (_, key) => text(value.params?.[key]))
@@ -93,51 +94,224 @@ function historyPanel() {
   function bind(node, name, value, write) {
     if (!bindings.has(node)) bindings.set(node, new Map());
     const update = () => write(text(value));
-    bindings.get(node).set(name, update);
+    if (value?.key) bindings.get(node).set(name, update);
+    else bindings.get(node).delete(name);
     update();
   }
   function node() {
     return {
-      scrollTop: 0, scrollLeft: 0, attrs: {}, children: [],
-      setAttribute(name, value) { this.attrs[name] = value; },
-      getAttribute(name) { return this.attrs[name]; },
+      scrollTop: 0, scrollLeft: 0, attrs: {}, children: [], dataset: {}, style: { setProperty() {} },
+      setAttribute(name, value) { this.attrs[name] = String(value); },
+      getAttribute(name) { return this.attrs[name] ?? null; },
+      removeAttribute(name) { delete this.attrs[name]; },
       get textContent() { return this.children.map(child => child.textContent ?? child).join(''); },
       set textContent(value) { this.replaceChildren(value); },
       get firstChild() { return this.children[0]; },
       get actions() { return this.children.filter(child => child.click); },
-      append(...children) { this.children.push(...children); },
-      replaceChildren(...children) { this.children = children; },
+      get isConnected() { return this.connected || this.parentNode?.isConnected || false; },
+      contains(other) { return !!other && (this === other || this.contains(other.parentNode)); },
+      append(...children) {
+        for (const child of children) {
+          if (child?.fragment) this.append(...child.children);
+          else {
+            if (typeof child === 'object') { child.remove(); child.parentNode = this; }
+            this.children.push(child);
+          }
+        }
+      },
+      replaceChildren(...children) {
+        for (const child of [...this.children]) child.remove?.();
+        this.children = [];
+        this.append(...children);
+      },
+      remove() {
+        if (!this.parentNode) return;
+        this.parentNode.children = this.parentNode.children.filter(child => child !== this);
+        this.parentNode = null;
+      },
+      addEventListener() {},
+      focus() { panel.document.activeElement = this; },
+      dispatchClick(target = this) {
+        this.onclick?.({ target });
+        this.parentNode?.dispatchClick(target);
+      },
     };
   }
   const panel = {
     state: { checkout: '/first', epoch: 1, status: { checkout: '/first', head: 'H' } },
     workbench: { history: null, historyRequest: 0 },
-    historyQuery,
+    document: { createElementNS: node, createDocumentFragment: () => Object.assign(node(), { fragment: true }) },
+    window: { matchMedia: () => ({ matches: true }) },
+    buildHistoryGraph, historyQuery, historyRefTags,
     collapsed: false,
     isSectionCollapsed: () => panel.collapsed,
     callTool: (name, args) => new Promise((resolve, reject) => requests.push({ name, args, resolve, reject })),
     el: id => {
-      if (!nodes.has(id)) nodes.set(id, node());
+      if (!nodes.has(id)) nodes.set(id, Object.assign(node(), { connected: true }));
       return nodes.get(id);
     },
     msg: (key, params) => ({ key, params }),
     uiText: (node, value) => bind(node, 'textContent', value, text => { node.textContent = text; }),
     uiAttr: (node, name, value) => bind(node, name, value, text => node.setAttribute(name, text)),
-    element: (_, __, value) => {
-      const element = node();
+    element: (tagName, className, value) => {
+      const element = Object.assign(node(), { tagName, className });
       if (value !== undefined) panel.uiText(element, value);
       return element;
     },
-    control: (label, click) => Object.assign(panel.element('button', '', label), { click }),
+    control: (label, onclick, className = 'sc-control') => Object.assign(panel.element('button', className, label), { onclick, click: onclick }),
+    icon: node,
+    bindTooltip: (anchor, content, options) => { anchor.tooltip = content; anchor.tooltipOptions = options; },
+    bindContextMenu() {},
+    copyText: value => copied.push(value),
   };
   runInNewContext(historyPanelSource, panel);
-  panel.renderHistory = () => panel.renderHistoryStatus();
+  if (!renderRows) panel.renderHistory = () => panel.renderHistoryStatus();
   function setLanguage(messages) {
     translate = key => messages[key] ?? key;
     for (const properties of bindings.values()) for (const update of properties.values()) update();
   }
-  return { panel, requests, setLanguage };
+  return { panel, requests, setLanguage, copied };
 }
+
+function showHistoryRows(panel) {
+  panel.workbench.history = { commits: [commit('H', ['A']), commit('A')], head: 'H' };
+  panel.renderHistory();
+  return panel.el('history-list').children;
+}
+
+test('the history row and chevron toggle changed files without replacing other rows', async () => {
+  const { panel, requests } = historyPanel({ renderRows: true });
+  const [entry, other] = showHistoryRows(panel);
+  const item = entry.firstChild;
+  const [chevron, subject] = item.children;
+  const scroller = panel.el('history-scroll');
+  scroller.scrollTop = 34;
+  subject.focus();
+
+  subject.dispatchClick();
+  assert.equal(chevron.getAttribute('aria-expanded'), 'true');
+  assert.match(entry.textContent, /Loading changed files/);
+  assert.equal(requests[0].name, 'git_history_detail');
+  assert.equal(panel.el('history-list').children[1], other);
+
+  subject.dispatchClick();
+  assert.equal(chevron.getAttribute('aria-expanded'), 'false');
+  assert.equal(entry.children.length, 1);
+  requests[0].resolve({ files: [{ path: 'README.md', status: 'M' }] });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(entry.children.length, 1);
+  assert.equal(panel.document.activeElement, subject);
+  assert.equal(scroller.scrollTop, 34);
+
+  chevron.dispatchClick();
+  assert.match(entry.textContent, /README\.md/);
+  assert.equal(requests.length, 1);
+  item.dispatchClick();
+  assert.equal(chevron.getAttribute('aria-expanded'), 'false');
+  assert.equal(entry.children.length, 1);
+
+  other.firstChild.children[1].dispatchClick();
+  assert.equal(subject.getAttribute('aria-pressed'), 'false');
+  assert.equal(other.firstChild.children[1].getAttribute('aria-pressed'), 'true');
+  requests[1].resolve({ files: [] });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.match(other.textContent, /No changed files/);
+  assert.equal(panel.el('history-list').firstChild, entry);
+});
+
+test('commit statistics load on tooltip creation, share a request and localize the counts', async () => {
+  const { panel, requests, setLanguage } = historyPanel({ renderRows: true });
+  const [entry] = showHistoryRows(panel);
+  const [, subject] = entry.firstChild.children;
+  assert.equal(requests.length, 0);
+  const tooltip = subject.tooltip();
+  const active = subject.tooltip();
+  panel.el('overlays').append(active);
+  assert.deepEqual(requests.map(({ name, args }) => [name, { ...args }]), [
+    ['git_history_stats', { repoPath: '/first', commit: 'H' }],
+  ]);
+  requests[0].resolve({ additions: 15, deletions: 0, binaryFiles: 2 });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.match(active.textContent, /\+15 lines added.*−0 lines deleted.*2 binary files/);
+  assert.doesNotMatch(tooltip.textContent, /\+15/);
+
+  setLanguage(historyMessages);
+  assert.match(active.textContent, /\+15 行新增.*−0 行删除.*2 个二进制文件/);
+  const cached = subject.tooltip();
+  panel.el('overlays').append(cached);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.match(cached.textContent, /\+15 行新增/);
+  assert.equal(requests.length, 1);
+});
+
+test('the side card shows the message body and copies the full commit hash', async () => {
+  const { panel, requests, setLanguage, copied } = historyPanel({ renderRows: true });
+  const id = '0123456789abcdef0123456789abcdef01234567';
+  panel.workbench.history = { commits: [commit(id)], head: id };
+  panel.renderHistory();
+  const [, subject] = panel.el('history-list').firstChild.firstChild.children;
+  assert.equal(subject.tooltipOptions.interactive, true);
+  assert.equal(subject.tooltipOptions.placement, 'side');
+  const tooltip = subject.tooltip();
+  panel.el('overlays').append(tooltip);
+
+  requests[0].resolve({ additions: 4, deletions: 1, binaryFiles: 0, filesChanged: 2, message: 'Details\n\n<body text>' });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.match(tooltip.textContent, /Details\n\n<body text>/);
+  assert.match(tooltip.textContent, /2 files changed/);
+  const footer = tooltip.children.at(-1);
+  assert.equal(footer.firstChild.textContent, '01234567');
+  const copy = footer.actions[0];
+  assert.equal(copy.getAttribute('aria-label'), 'Copy commit hash');
+  setLanguage(historyMessages);
+  assert.equal(copy.getAttribute('aria-label'), '复制提交哈希');
+  copy.dispatchClick();
+  assert.deepEqual(copied, [id]);
+});
+
+test('synthetic comparison rows preserve comparison and skip commit statistics', () => {
+  const { panel, requests } = historyPanel({ renderRows: true });
+  let comparison;
+  panel.openCompare = args => { comparison = { ...args }; };
+  panel.workbench.history = { commits: [commit('R', ['A']), commit('H', ['A']), commit('A')], head: 'H', upstream: 'R', ahead: 1, behind: 0, base: 'A' };
+  panel.renderHistory();
+  const outgoing = panel.el('history-list').children[1].firstChild;
+  const subject = outgoing.firstChild;
+  assert.equal(outgoing.dataset.kind, 'outgoing');
+  assert.equal(subject.tooltipOptions, undefined);
+  assert.match(subject.tooltip().textContent, /Outgoing changes/);
+  subject.dispatchClick();
+  assert.deepEqual(comparison, { from: 'A', to: 'H' });
+  assert.equal(requests.length, 0);
+});
+
+test('tooltip stats ignore an old checkout and let the next hover retry a failed request', async () => {
+  const { panel, requests } = historyPanel({ renderRows: true });
+  const [entry] = showHistoryRows(panel);
+  const outdated = entry.firstChild.children[1].tooltip();
+  panel.el('overlays').append(outdated);
+
+  panel.state.epoch++;
+  panel.state.checkout = '/second';
+  panel.state.status = { checkout: '/second', head: 'H' };
+  panel.resetHistoryCheckout();
+  const [nextEntry] = showHistoryRows(panel);
+  const subject = nextEntry.firstChild.children[1];
+  const failed = subject.tooltip();
+  panel.el('overlays').append(failed);
+  assert.equal(requests[1].args.repoPath, '/second');
+  requests[0].resolve({ additions: 20, deletions: 0, binaryFiles: 0 });
+  requests[1].reject(new Error('unavailable'));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.doesNotMatch(outdated.textContent, /\+20/);
+  assert.match(failed.textContent, /Line counts unavailable/);
+
+  const retried = subject.tooltip();
+  panel.el('overlays').append(retried);
+  requests[2].resolve({ additions: 0, deletions: 1, binaryFiles: 0 });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.match(retried.textContent, /\+0 lines added.*−1 line deleted/);
+});
 
 test('history translates loading and reference controls while keeping Git errors verbatim', async () => {
   const { panel, requests, setLanguage } = historyPanel();
