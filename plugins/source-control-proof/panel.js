@@ -18,7 +18,7 @@ async function refreshProjects() {
     state.projects = catalog.projects; state.homeDirectory = catalog.homeDirectory || '';
     renderPicker();
     renderRepositories();
-    if (catalog.discovery?.warning) showError(catalog.discovery.warning);
+    if (catalog.discovery?.warning) showError(msg(catalog.discovery.warning));
   })();
   try { await catalogRequest; } finally { catalogRequest = null; }
 }
@@ -54,18 +54,20 @@ async function callTool(name, args = {}) {
   if (result.isError) throw new Error(result.content?.[0]?.text || 'Request failed.');
   return result.structuredContent;
 }
-function showError(message = '') { el('error').textContent = message; el('error').hidden = !message; el('status-dot').dataset.error = String(!!message); }
+function showError(message = '') {
+  const display = message === 'Git request timed out. Refresh to verify the result.' ? msg(message) : message;
+  uiText(el('error'), display); el('error').hidden = !message; el('status-dot').dataset.error = String(!!message); }
 function savePreference() {
   window.openai?.setWidgetState?.({
     checkout: state.checkout, mode: state.mode, tree: workbench.tree,
-    split: shellState.ratio, collapsed: [...shellState.collapsed],
+    split: shellState.ratio, collapsed: [...shellState.collapsed], language: panelLanguage,
   });
 }
 function renderPicker() {
   const currentProject = state.projects.find(project => project.checkouts.some(checkout => checkout.path === state.checkout));
   const isWorktree = currentProject && state.checkout !== currentProject.path;
-  const projectLabel = currentProject ? currentProject.label + (isWorktree ? ' · Worktree' : '')
-    : state.checkout?.split(/[\\/]/).filter(Boolean).at(-1) || 'Choose a repository';
+  const projectLabel = currentProject ? isWorktree ? msg('{project} · Worktree', { project: currentProject.label }) : currentProject.label
+    : state.checkout?.split(/[\\/]/).filter(Boolean).at(-1) || msg('Choose repository');
   const query = el('project-search').value.trim().toLowerCase();
   const signature = JSON.stringify([state.projects, state.checkout, state.homeDirectory, query, [...expandedProjects]]);
   if (signature === pickerSignature) return;
@@ -78,8 +80,8 @@ function renderPicker() {
     button.setAttribute('aria-current', String(checkout.path === state.checkout));
     button.append(icon(worktree ? 'branch' : 'repo', 'sc-picker-symbol'));
     const copy = document.createElement('span'); copy.className = 'sc-picker-copy';
-    const name = document.createElement('span'); name.className = 'sc-picker-name'; name.textContent = worktree ? checkout.branch : project.label;
-    const branch = document.createElement('span'); branch.className = 'sc-picker-branch'; branch.textContent = worktree ? shortPath(checkout.path) : checkout.branch;
+    const name = document.createElement('span'); name.className = 'sc-picker-name'; uiText(name, worktree ? checkout.branch : project.label);
+    const branch = document.createElement('span'); branch.className = 'sc-picker-branch'; uiText(branch, worktree ? shortPath(checkout.path) : checkout.branch || msg('Custom checkout'));
     copy.append(name, branch); button.append(copy);
     if (checkout.path === state.checkout) button.append(icon('check', 'sc-picker-check'));
     button.onclick = () => { closePicker(); switchCheckout(checkout.path); };
@@ -100,17 +102,17 @@ function renderPicker() {
     const expanded = expandedProjects.has(project.path) || !!query;
     if (worktrees.length) {
       if (!query) { const toggle = document.createElement('button'); toggle.type = 'button'; toggle.className = 'sc-worktree-toggle';
-      toggle.textContent = worktrees.length; toggle.append(icon('chevron')); toggle.setAttribute('aria-label', 'Worktrees for ' + project.label); toggle.setAttribute('aria-expanded', String(expanded));
+      toggle.textContent = worktrees.length; toggle.append(icon('chevron')); uiAttr(toggle, 'aria-label', msg('Worktrees for {project}', { project: project.label })); toggle.setAttribute('aria-expanded', String(expanded));
       toggle.onclick = () => { if (expandedProjects.has(project.path)) expandedProjects.delete(project.path); else expandedProjects.add(project.path); renderPicker(); el('project-list').querySelector('[data-worktrees="' + CSS.escape(project.path) + '"]')?.focus(); };
       toggle.dataset.worktrees = project.path; entry.append(toggle); }
       if (expanded) { const children = document.createElement('div'); children.className = 'sc-picker-worktrees'; for (const checkout of worktrees.filter(matches)) children.append(option(project, checkout, true)); list.append(children); }
     }
   }
   if (state.checkout && !known.has(state.checkout)) {
-    const checkout = { path: state.checkout, branch: state.status?.branch || 'Custom checkout' };
+    const checkout = { path: state.checkout, branch: state.status?.branch };
     if (!query || state.checkout.toLowerCase().includes(query)) list.prepend(option({ label: projectLabel }, checkout));
   }
-  if (!list.childElementCount) { const empty = document.createElement('div'); empty.className = 'sc-picker-no-results'; empty.textContent = query ? 'No repositories match your search.' : 'No saved repositories.'; list.append(empty); }
+  if (!list.childElementCount) { const empty = document.createElement('div'); empty.className = 'sc-picker-no-results'; uiText(empty, msg(query ? 'No repositories match your search.' : 'No saved repositories.')); list.append(empty); }
 }
 function openPicker() {
   el('project-popover').hidden = false; el('project').setAttribute('aria-expanded', 'true');
@@ -122,14 +124,15 @@ function closePicker(restoreFocus = true) {
   if (restoreFocus) el('project').focus();
 }
 function emptyViewer(message) {
-  el('file-title').textContent = 'Preview'; el('file-context').textContent = 'Select a file or commit';
+  uiText(el('file-title'), msg('Preview')); uiText(el('file-context'), msg('Select a file or commit'));
   el('code').classList.remove('sc-detail-diff');
   el('code').replaceChildren(); el('code').hidden = true;
   el('images').replaceChildren(); el('images').hidden = true;
   imageSignature = '';
-  const title = document.createElement('strong'); title.textContent = 'Select a file or commit';
-  const detail = document.createElement('span'); detail.textContent = message || 'Review changes and Git history.';
-  el('view-message').replaceChildren(title,detail); el('view-message').dataset.notice = 'false'; el('view-message').hidden = false;
+  const title = document.createElement('strong'); uiText(title, msg('Select a file or commit'));
+  const detail = document.createElement('span'); uiText(detail, message || msg('Review changes and Git history.'));
+  uiText(el('view-message'), '');
+  el('view-message').replaceChildren(title, detail); el('view-message').dataset.notice = 'false'; el('view-message').hidden = false;
 }
 function renderFiles() {
   const scrollContainer = el('changes-body');
@@ -147,7 +150,7 @@ function renderFiles() {
       else collapsedFileGroups.delete(key);
       renderFiles();
     }, 'sc-group-toggle');
-    toggle.append(icon('chevron'), element('span', '', title));
+    toggle.append(icon('chevron'), element('span', '', msg(title)));
     toggle.setAttribute('aria-expanded', String(open));
     toggle.dataset.focusKey = 'group:' + key;
     const actions = element('div', 'sc-group-actions');
@@ -165,7 +168,7 @@ function renderFiles() {
     if (open) section.append(fileTreeItems(rows, key, file => workingFileRow(file, key)));
     rendered.append(section);
   }
-  if (!rendered.childElementCount && state.status) rendered.append(element('p', 'sc-empty sc-clean', 'Working tree clean'));
+  if (!rendered.childElementCount && state.status) rendered.append(element('p', 'sc-empty sc-clean', msg('Working tree clean')));
   el('files').replaceChildren(rendered);
   scrollContainer.scrollTop = scrollTop;
   restoreRailFocus(el('files'), focus);
@@ -234,14 +237,15 @@ function renderStatus(data) {
   const count = new Set(groups.flatMap(([group]) => data[group].map(file => file.path))).size;
   el('total-count').textContent = count;
   el('total-count').hidden = !count;
-  el('context').textContent = 'Checkout source: ' + data.contextSource; el('time').textContent = 'Checked ' + new Date(data.checkedAt).toLocaleTimeString();
-  el('diagnostics').textContent = JSON.stringify({ launchDirectory: data.launchDirectory, contextSource: data.contextSource, hostContextKeys: Object.keys(state.hostContext) }, null, 2);
+  uiText(el('context'), msg('Checkout source: {source}', { source: data.contextSource }));
+  uiText(el('time'), msg('Checked {time}', { time: new Date(data.checkedAt) }));
+  uiText(el('diagnostics'), JSON.stringify({ launchDirectory: data.launchDirectory, contextSource: data.contextSource, hostContextKeys: Object.keys(state.hostContext) }, null, 2));
   if (state.selection && !data[state.selection.group].some(f => f.path === state.selection.path)) {
     state.selection = null;
     if (['file', 'patch', 'conflict'].includes(workbench.preview)) {
       state.viewRequest++;
       resetPreview();
-      emptyViewer('The selected file is no longer in this change group.');
+      emptyViewer(msg('The selected file is no longer in this change group.'));
     }
   }
   renderPicker();
@@ -277,7 +281,7 @@ async function changeStaging(path, group) {
   const epoch = state.epoch, checkout = state.checkout, action = group === 'staged' ? 'unstage' : 'stage';
   const restoreFocus = document.activeElement?.classList.contains('sc-file-stage'); let failed = false;
   state.staging = { epoch, checkout, path, action }; state.statusRequest++; state.viewRequest++; state.refreshEpoch = null;
-  el('refresh').disabled = true; el('staging-message').textContent = (action === 'stage' ? 'Staging ' : 'Unstaging ') + path.split('/').at(-1) + '…'; updateCommitButton(); renderHistoryStatus(); renderFiles();
+  el('refresh').disabled = true; uiText(el('staging-message'), msg(action === 'stage' ? 'Staging {file}…' : 'Unstaging {file}…', { file: path.split('/').at(-1) })); updateCommitButton(); renderHistoryStatus(); renderFiles();
   try {
     const data = await callTool('git_staging', { repoPath: checkout, path, group, action });
     if (epoch !== state.epoch) return;
@@ -285,13 +289,13 @@ async function changeStaging(path, group) {
       const nextGroup = (action === 'stage' ? ['staged'] : ['unstaged', 'untracked', 'conflicts']).find(key => data[key].some(file => file.path === path));
       state.selection = nextGroup ? { path, group: nextGroup } : null;
       resetPreview();
-      if (!state.selection) emptyViewer('The file has no remaining changes.');
+      if (!state.selection) emptyViewer(msg('The file has no remaining changes.'));
     }
     renderStatus(data);
     showError();
-    el('staging-message').textContent = (action === 'stage' ? 'Staged ' : 'Unstaged ') + path.split('/').at(-1);
+    uiText(el('staging-message'), msg(action === 'stage' ? 'Staged {file}' : 'Unstaged {file}', { file: path.split('/').at(-1) }));
     if (state.selection && workbench.preview === 'file') await loadFile();
-  } catch (error) { failed = true; if (epoch === state.epoch) { showError(error.message); el('staging-message').textContent = 'Unable to confirm the staging result.'; } }
+  } catch (error) { failed = true; if (epoch === state.epoch) { showError(error.message); uiText(el('staging-message'), msg('Unable to confirm the staging result.')); } }
   finally {
     state.staging = null; updateCommitButton(); renderHistoryStatus(); renderFiles(); el('refresh').disabled = state.refreshEpoch !== null;
     if (epoch !== state.epoch || failed) await refresh({ force: true });
@@ -314,9 +318,9 @@ async function switchCheckout(checkout, { focusRepository = false } = {}) {
   state.selection = null;
   state.status = null;
   newCheckout(previous);
-  el('staging-message').textContent = '';
-  el('context').textContent = '';
-  el('time').textContent = 'Reading Git status…';
+  uiText(el('staging-message'), '');
+  uiText(el('context'), '');
+  uiText(el('time'), msg('Reading Git status…'));
   el('total-count').hidden = true;
   renderPicker();
   renderRepositories();
@@ -328,7 +332,7 @@ async function switchCheckout(checkout, { focusRepository = false } = {}) {
     restoreRailFocus(el('repository-list'), 'repo:' + state.checkout);
   }
 }
-function clearCode(message) { el('code').hidden = true; el('images').hidden = true; el('view-message').hidden = false; el('view-message').dataset.notice = 'false'; el('view-message').textContent = message; }
+function clearCode(message) { el('code').hidden = true; el('images').hidden = true; el('view-message').hidden = false; el('view-message').dataset.notice = 'false'; uiText(el('view-message'), message); }
 function formatBytes(size) { if (size < 1024) return size + ' B'; if (size < 1024 * 1024) return (size / 1024).toFixed(1) + ' KB'; return (size / (1024 * 1024)).toFixed(2) + ' MB'; }
 function renderImages(view) {
   el('code').hidden = true; el('view-message').hidden = true; el('images').hidden = false;
@@ -337,16 +341,16 @@ function renderImages(view) {
   imageSignature = signature; el('images').replaceChildren();
   for (const image of view.images) {
     const figure = document.createElement('figure'); figure.className = 'sc-image-card';
-    const label = document.createElement('figcaption'); label.textContent = image.label; figure.append(label);
+    const label = document.createElement('figcaption'); uiText(label, msg(image.label)); figure.append(label);
     const canvas = document.createElement('div'); canvas.className = 'sc-image-canvas'; figure.append(canvas);
     const dimensions = document.createElement('div'); dimensions.className = 'sc-image-info'; dimensions.textContent = image.byteSize === undefined ? '' : formatBytes(image.byteSize); figure.append(dimensions);
     if (image.dataUrl) {
-      const img = document.createElement('img'); img.alt = view.path + ' · ' + image.label;
+      const img = document.createElement('img'); uiAttr(img, 'alt', msg('{path} · {snapshot}', { path: view.path, snapshot: msg(image.label) }));
       img.onload = () => { dimensions.textContent = img.naturalWidth + ' × ' + img.naturalHeight + ' px · ' + formatBytes(image.byteSize); };
-      img.onerror = () => { canvas.textContent = 'This image could not be decoded.'; };
+      img.onerror = () => { uiText(canvas, msg('This image could not be decoded.')); };
       img.src = image.dataUrl;
       canvas.append(img);
-    } else canvas.textContent = image.message || 'No image in this snapshot.';
+    } else uiText(canvas, msg(image.message || 'No image in this snapshot.'));
     el('images').append(figure);
   }
 }
@@ -357,10 +361,10 @@ function appendCodeLine(fragment, text, oldLine, newLine, style, mode) {
 }
 function renderCode(view) {
   const mode = view.displayMode || state.mode;
-  el('file-context').textContent = view.sourceLabel || (view.group === 'staged' ? 'Staged snapshot' : 'Working copy');
+  uiText(el('file-context'), msg(view.sourceLabel || (view.group === 'staged' ? 'Staged snapshot' : 'Working copy')));
   if (view.kind === 'image') { renderImages(view); return; }
   el('images').hidden = true;
-  if (view.message || !view.text) { clearCode(view.message || (mode !== 'source' ? 'No text changes.' : 'Empty file.')); return; }
+  if (view.message || !view.text) { clearCode(msg(view.message || (mode !== 'source' ? 'No text changes.' : 'Empty file.'))); return; }
   if (mode === 'split') { renderSplit(view); return; }
   const oldScroll = { top: el('code').scrollTop, left: el('code').scrollLeft };
   const lines = view.text.split('\n'); if (lines.at(-1) === '') lines.pop();
@@ -376,14 +380,15 @@ function renderCode(view) {
     else appendCodeLine(fragment, line, null, null, 'meta', mode);
   }
   el('code').replaceChildren(fragment); el('code').hidden = false; el('code').scrollTop = oldScroll.top; el('code').scrollLeft = oldScroll.left;
-  el('view-message').hidden = lines.length <= 10000; el('view-message').dataset.notice = 'true'; el('view-message').textContent = 'Showing the first 10,000 lines.';
+  el('view-message').hidden = lines.length <= 10000; el('view-message').dataset.notice = 'true'; uiText(el('view-message'), msg('Showing the first 10,000 lines.'));
 }
 async function loadFile() {
   if (!state.selection || workbench.preview !== 'file') return;
   const token = ++state.viewRequest;
   el('code').classList.remove('sc-detail-diff');
   const args = { repoPath: state.checkout, ...state.selection, mode: state.mode === 'split' ? 'diff' : state.mode };
-  el('file-title').textContent = args.path; el('file-context').textContent = args.group === 'staged' ? 'Staged changes' : args.group === 'untracked' ? 'Untracked file' : 'Working copy';
+  uiText(el('file-title'), args.path);
+  uiText(el('file-context'), msg(args.group === 'staged' ? 'Staged Changes' : args.group === 'untracked' ? 'Untracked file' : 'Working copy'));
   try { const view = await callTool('git_file', args); if (token === state.viewRequest) renderCode(view); }
   catch (error) { if (token === state.viewRequest) clearCode(error.message); }
 }
@@ -393,7 +398,7 @@ function setMode(mode) {
   el('code').scrollTop = 0; el('code').scrollLeft = 0; savePreference();
   if (state.selection) {
     if (state.selection.group === 'conflicts') openConflict();
-    else { resetPreview(); clearCode('Loading file…'); loadFile(); }
+    else { resetPreview(); clearCode(msg('Loading file…')); loadFile(); }
   }
 }
 window.addEventListener('message', event => {
@@ -429,6 +434,8 @@ document.addEventListener('keydown', event => {
   } else if (event.key === 'Enter' && event.target === el('project-search')) { event.preventDefault(); options[0]?.click(); }
 });
 for (const mode of ['diff', 'split', 'source']) el(mode + '-mode').onclick = () => setMode(mode);
+setPanelMessages({ ...shellMessages, ...actionMessages, ...historyMessages, ...previewMessages });
+initializePanelLanguage(el('panel-language'));
 initializeWorkbench();
 (async () => {
   try {
@@ -441,12 +448,12 @@ initializeWorkbench();
     if (preferences?.tree) {
       workbench.tree = true;
       el('tree-toggle').setAttribute('aria-pressed', 'true');
-      el('tree-toggle').setAttribute('aria-label', 'Show file list');
+      uiAttr(el('tree-toggle'), 'aria-label', msg('Show file list'));
     }
     await refreshProjects();
     if (!state.checkout && typeof preferences?.checkout === 'string') await switchCheckout(preferences.checkout);
     else if (!state.checkout) {
-      el('time').textContent = 'Choose a checkout';
+      uiText(el('time'), msg('Choose a checkout'));
       renderFiles();
       renderHistory();
     }

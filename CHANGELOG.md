@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.8.0
+
+- Add a persistent Simplified Chinese and English language selector for the Source Control panel.
+- Translate workbench controls, history, previews and Git dialogs while preserving original Git content.
+
 ## 0.7.0
 
 - Show Repositories, Changes and Graph together, with a resizable divider and independent scroll areas.

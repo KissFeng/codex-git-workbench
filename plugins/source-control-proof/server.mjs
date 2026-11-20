@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { workbenchTools, callWorkbenchTool } from './git-tools.mjs';
 
-const uri = 'ui://source-control-proof/panel-v8.html';
+const uri = 'ui://source-control-proof/panel-v9.html';
 const manifest = JSON.parse(await readFile(new URL('./.codex-plugin/plugin.json', import.meta.url), 'utf8'));
 const icon = { src: 'data:image/svg+xml;base64,' + (await readFile(new URL('./assets/branch.svg', import.meta.url))).toString('base64'), mimeType: 'image/svg+xml', sizes: ['any'] };
 const inputSchema = { type: 'object', properties: { repoPath: { type: 'string', description: 'Absolute checkout path. Opening the panel without one lets you choose from Codex projects.' } }, additionalProperties: false };
@@ -40,7 +40,8 @@ export async function panelHtml() {
   const [html, styles, scripts] = await Promise.all([
     read('panel.html'),
     Promise.all(['panel.css', 'panel-layout.css', 'panel-history.css', 'panel-overlays.css'].map(read)),
-    Promise.all(['panel-model.mjs', 'panel-graph.mjs', 'panel-overlays.js', 'panel-actions.js',
+    Promise.all(['panel-locale.mjs', 'panel-messages-shell.mjs', 'panel-messages-actions.mjs', 'panel-messages-history.mjs',
+      'panel-messages-preview.mjs', 'panel-model.mjs', 'panel-graph.mjs', 'panel-overlays.js', 'panel-actions.js',
       'panel-workspace.js', 'panel-history.js', 'panel-workbench.js', 'panel.js'].map(read)),
   ]);
   return html.replace('/* PANEL_CSS */', () => styles.join('\n'))
@@ -55,7 +56,7 @@ export async function handle(method, params = {}) {
     case 'resources/templates/list': return { resourceTemplates: [] };
     case 'prompts/list': return { prompts: [] };
     case 'resources/read': {
-      if (![uri, 'ui://source-control-proof/panel-v1.html', 'ui://source-control-proof/panel-v2.html', 'ui://source-control-proof/panel-v3.html', 'ui://source-control-proof/panel-v4.html', 'ui://source-control-proof/panel-v5.html', 'ui://source-control-proof/panel-v6.html', 'ui://source-control-proof/panel-v7.html'].includes(params.uri)) throw new Error('Unknown resource');
+      if (![uri, 'ui://source-control-proof/panel-v1.html', 'ui://source-control-proof/panel-v2.html', 'ui://source-control-proof/panel-v3.html', 'ui://source-control-proof/panel-v4.html', 'ui://source-control-proof/panel-v5.html', 'ui://source-control-proof/panel-v6.html', 'ui://source-control-proof/panel-v7.html', 'ui://source-control-proof/panel-v8.html'].includes(params.uri)) throw new Error('Unknown resource');
       return { contents: [{ uri: params.uri, mimeType: 'text/html;profile=mcp-app', text: await panelHtml(),
         _meta: { ui: { prefersBorder: false }, 'openai/ui': { preferredDisplayMode: 'fullscreen', availableDisplayModes: ['inline', 'fullscreen'] } } }] };
     }

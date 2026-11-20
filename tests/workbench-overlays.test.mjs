@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { runInNewContext } from 'node:vm';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { actionMessages } from '../plugins/source-control-proof/panel-messages-actions.mjs';
 
 const panelSource = file => readFile(new URL('../plugins/source-control-proof/' + file, import.meta.url), 'utf8');
 const evaluate = (source, expression, context = {}) => runInNewContext(source + '\n' + expression, context);
@@ -88,4 +89,22 @@ test('context menu uses the original actionable row element for focus restoratio
   listeners.contextmenu(event(null));
   listeners.keydown({ ...event(rowAction), key: 'F10', shiftKey: true });
   assert.deepEqual(calls, [primary, rowAction]);
+});
+
+test('command lists localize actions but preserve Git labels with the same text', async () => {
+  const source = await panelSource('panel-actions.js');
+  const shown = [];
+  evaluate(source, `
+    openAction = (_, list) => shown.push(...list.items);
+    commandList('Git actions', [
+      { label: 'Fetch', run() {} },
+      { label: 'Fetch', rawLabel: true, run() {} },
+    ]);
+  `, {
+    shown,
+    msg: key => ({ key }),
+    element: () => ({ items: [], append(item) { this.items.push(item); } }),
+    control: text => ({ label: actionMessages[text?.key] ?? text }),
+  });
+  assert.deepEqual(shown.map(item => item.label), ['获取', 'Fetch']);
 });

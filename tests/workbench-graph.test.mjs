@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { runInNewContext } from 'node:vm';
 import { buildHistoryGraph, historyQuery, historyRefTags, matchingHistoryReferences } from '../plugins/source-control-proof/panel-graph.mjs';
+import { historyMessages } from '../plugins/source-control-proof/panel-messages-history.mjs';
 
 const commit = (id, parents = [], refs = []) => ({ id, parents, refs, subject: id });
 const merge = [commit('M', ['B', 'C', 'D']), commit('D', ['A']), commit('C', ['A']), commit('B', ['A']), commit('A')];
@@ -84,6 +85,30 @@ const historyPanelSource = readFileSync(new URL('../plugins/source-control-proof
 function historyPanel() {
   const nodes = new Map();
   const requests = [];
+  const bindings = new Map();
+  let translate = key => key;
+  const text = value => value?.key
+    ? translate(value.key).replace(/\{(\w+)\}/g, (_, key) => text(value.params?.[key]))
+    : String(value ?? '');
+  function bind(node, name, value, write) {
+    if (!bindings.has(node)) bindings.set(node, new Map());
+    const update = () => write(text(value));
+    bindings.get(node).set(name, update);
+    update();
+  }
+  function node() {
+    return {
+      scrollTop: 0, scrollLeft: 0, attrs: {}, children: [],
+      setAttribute(name, value) { this.attrs[name] = value; },
+      getAttribute(name) { return this.attrs[name]; },
+      get textContent() { return this.children.map(child => child.textContent ?? child).join(''); },
+      set textContent(value) { this.replaceChildren(value); },
+      get firstChild() { return this.children[0]; },
+      get actions() { return this.children.filter(child => child.click); },
+      append(...children) { this.children.push(...children); },
+      replaceChildren(...children) { this.children = children; },
+    };
+  }
   const panel = {
     state: { checkout: '/first', epoch: 1, status: { checkout: '/first', head: 'H' } },
     workbench: { history: null, historyRequest: 0 },
@@ -92,22 +117,51 @@ function historyPanel() {
     isSectionCollapsed: () => panel.collapsed,
     callTool: (name, args) => new Promise((resolve, reject) => requests.push({ name, args, resolve, reject })),
     el: id => {
-      if (!nodes.has(id)) {
-        nodes.set(id, {
-          scrollTop: 0, scrollLeft: 0, actions: [],
-          setAttribute() {},
-          set textContent(value) { this.message = value; this.actions = []; },
-          append(_, action) { this.actions.push(action); },
-        });
-      }
+      if (!nodes.has(id)) nodes.set(id, node());
       return nodes.get(id);
     },
-    control: (label, click) => ({ label, click }),
+    msg: (key, params) => ({ key, params }),
+    uiText: (node, value) => bind(node, 'textContent', value, text => { node.textContent = text; }),
+    uiAttr: (node, name, value) => bind(node, name, value, text => node.setAttribute(name, text)),
+    element: (_, __, value) => {
+      const element = node();
+      if (value !== undefined) panel.uiText(element, value);
+      return element;
+    },
+    control: (label, click) => Object.assign(panel.element('button', '', label), { click }),
   };
   runInNewContext(historyPanelSource, panel);
   panel.renderHistory = () => panel.renderHistoryStatus();
-  return { panel, requests };
+  function setLanguage(messages) {
+    translate = key => messages[key] ?? key;
+    for (const properties of bindings.values()) for (const update of properties.values()) update();
+  }
+  return { panel, requests, setLanguage };
 }
+
+test('history translates loading and reference controls while keeping Git errors verbatim', async () => {
+  const { panel, requests, setLanguage } = historyPanel();
+  const status = panel.el('history-state');
+  const loading = panel.loadHistory();
+  assert.equal(status.textContent, 'Loading commits…');
+
+  setLanguage(historyMessages);
+  assert.equal(panel.el('history-heading').textContent, '提交图');
+  assert.equal(panel.el('history-refs').textContent, '全部');
+  assert.equal(panel.el('history-refs').getAttribute('aria-label'), '提交图引用 · 所有引用');
+  assert.equal(status.textContent, '正在加载提交…');
+
+  requests[0].reject(new Error('fatal: invalid object name'));
+  assert.equal(await loading, false);
+  assert.equal(status.firstChild.textContent, 'fatal: invalid object name');
+  const retry = status.actions[0];
+  assert.equal(retry.textContent, '重试');
+
+  setLanguage({});
+  assert.equal(status.firstChild.textContent, 'fatal: invalid object name');
+  assert.equal(status.actions[0], retry);
+  assert.equal(retry.textContent, 'Retry');
+});
 
 test('history only loads while expanded and ignores a page from the previous checkout', async () => {
   const { panel, requests } = historyPanel();
@@ -154,7 +208,7 @@ test('paging uses the existing cursor, keeps loaded commits on failure and reloa
   requests[1].reject(new Error('Network error.'));
   assert.equal(await next, false);
   assert.equal(panel.workbench.history.commits[0].id, 'H');
-  assert.equal(panel.el('history-state').message, 'Network error.');
+  assert.equal(panel.el('history-state').firstChild.textContent, 'Network error.');
 
   const retry = panel.el('history-state').actions[0].click();
   assert.equal(requests[2].args.cursor, 'first-page');

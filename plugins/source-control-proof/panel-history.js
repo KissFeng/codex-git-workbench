@@ -3,7 +3,7 @@ const commitGraph = {
   error: null, notice: '', locating: null, located: null, referencePicker: null,
 };
 const historyScopeLabels = {
-  all: 'All references', current: 'Current branch and upstream', selected: 'Selected references',
+  all: msg('All references'), current: msg('Current branch and upstream'), selected: msg('Selected references'),
 };
 
 function resetHistoryCheckout() {
@@ -71,7 +71,11 @@ function loadHistory({ reset = false, more = false } = {}) {
       return true;
     } catch (error) {
       if (!current()) return;
-      commitGraph.error = { message: error.message, more: more && error.message !== 'Invalid Git history cursor.' };
+      const cursorExpired = error.message === 'Invalid Git history cursor.';
+      commitGraph.error = {
+        message: cursorExpired ? msg('Invalid Git history cursor.') : error.message,
+        more: more && !cursorExpired,
+      };
       return false;
     } finally {
       if (ownsRequest()) {
@@ -109,21 +113,25 @@ function filterHistory(ref, path) {
   return applyHistoryFilter(ref ? 'selected' : 'all', ref ? [ref] : []);
 }
 
+function historyScopeLabel() {
+  return workbench.historyPath ? msg('File history') : historyScopeLabels[commitGraph.scope];
+}
+
 function chooseHistoryReferences() {
   if (!state.status) return;
   const form = element('form', 'sc-history-reference-form');
   const modes = element('fieldset', 'sc-history-reference-modes');
-  modes.append(element('legend', '', 'History scope'));
+  modes.append(element('legend', '', msg('History scope')));
   const filters = element('div', 'sc-history-reference-filter');
   const search = element('input', 'sc-input');
   search.type = 'search';
-  search.placeholder = 'Search branches and tags';
-  search.setAttribute('aria-label', search.placeholder);
+  uiAttr(search, 'placeholder', msg('Search branches and tags'));
+  uiAttr(search, 'aria-label', msg('Search branches and tags'));
   const results = element('div', 'sc-history-reference-results');
   const selected = new Set(commitGraph.refs);
   const selectionCount = element('span', 'sc-muted');
   const actions = element('div', 'sc-actions sc-dialog-buttons');
-  const submit = element('button', 'sc-primary', 'Apply');
+  const submit = element('button', 'sc-primary', msg('Apply'));
   submit.type = 'submit';
   let scope = commitGraph.scope;
   let references = null;
@@ -133,7 +141,7 @@ function chooseHistoryReferences() {
   function updateSelection() {
     submit.disabled = scope === 'selected' && !selected.size;
     selectionCount.hidden = scope !== 'selected';
-    selectionCount.textContent = selected.size + ' selected';
+    uiText(selectionCount, msg('{count} selected', { count: selected.size }));
   }
 
   for (const [value, label] of Object.entries(historyScopeLabels)) {
@@ -156,16 +164,16 @@ function chooseHistoryReferences() {
   function renderMatches() {
     results.replaceChildren();
     if (!references) {
-      const message = referenceError ? 'References could not be loaded.' : 'Loading references…';
+      const message = referenceError ? msg('References could not be loaded.') : msg('Loading references…');
       results.append(element('p', 'sc-muted', message));
-      if (referenceError) results.append(control('Retry', requestReferences));
+      if (referenceError) results.append(control(msg('Retry'), requestReferences));
       return;
     }
     const groups = matchingHistoryReferences(references, search.value);
-    if (!groups.length) results.append(element('p', 'sc-muted', 'No matching references.'));
+    if (!groups.length) results.append(element('p', 'sc-muted', msg('No matching references.')));
     for (const { label, items } of groups) {
       const group = element('fieldset', 'sc-history-reference-group');
-      group.append(element('legend', '', label));
+      group.append(element('legend', '', msg(label)));
       for (const item of items) {
         const option = element('label', 'sc-history-reference-choice');
         const input = element('input');
@@ -178,7 +186,7 @@ function chooseHistoryReferences() {
         };
         const name = element('span', '', item.name);
         option.append(input, name);
-        if (item.current) option.append(element('span', 'sc-muted', 'Current'));
+        if (item.current) option.append(element('span', 'sc-muted', msg('Current')));
         group.append(option);
       }
       results.append(group);
@@ -207,11 +215,11 @@ function chooseHistoryReferences() {
   filters.hidden = scope !== 'selected';
   search.oninput = renderMatches;
   filters.append(search, results);
-  actions.append(selectionCount, control('Cancel', () => el('action-dialog').close()), submit);
+  actions.append(selectionCount, control(msg('Cancel'), () => el('action-dialog').close()), submit);
   form.append(modes, filters, actions);
   updateSelection();
   commitGraph.referencePicker = form;
-  openAction('Graph references', form);
+  openAction(msg('Graph references'), form);
   (filters.hidden ? modes.querySelector(':checked') : search)?.focus();
   if (!filters.hidden) requestReferences();
 }
@@ -258,13 +266,19 @@ function historyRowDetails(row, refs, label) {
   content.append(element('strong', '', label));
   if (row.comparison) {
     const branch = row.kind === 'outgoing' ? state.status.branch : state.status.upstream;
-    content.append(element('span', '', (branch || 'HEAD') + ' · ' + row.count + (row.count === 1 ? ' commit' : ' commits')));
+    const count = msg(row.count === 1 ? '{count} commit' : '{count} commits', { count: row.count });
+    content.append(element('span', '', msg('{branch} · {count}', { branch: branch || 'HEAD', count })));
     content.append(element('code', '', `${row.comparison.from.slice(0, 8)} → ${row.comparison.to.slice(0, 8)}`));
   } else {
     const { author, date, id, relation } = row.commit;
-    const relationText = relation === 'ahead' ? 'Outgoing' : relation === 'behind' ? 'Incoming' : '';
-    content.append(element('span', '', [author, date ? new Date(date).toLocaleString() : '', relationText].filter(Boolean).join(' · ')));
-    content.append(element('code', '', id));
+    const relationText = relation === 'ahead' ? msg('Outgoing') : relation === 'behind' ? msg('Incoming') : '';
+    const details = [author, date ? msg('{date}', { date: new Date(date) }) : '', relationText].filter(Boolean);
+    const metadata = element('span');
+    for (const [index, detail] of details.entries()) {
+      if (index) metadata.append(' · ');
+      metadata.append(element('span', '', detail));
+    }
+    content.append(metadata, element('code', '', id));
     if (refs.length) {
       const badges = element('div', 'sc-history-tooltip-refs');
       badges.append(...refs.map(ref => element('span', `sc-ref sc-ref-${ref.kind}`, ref.name)));
@@ -316,11 +330,11 @@ function renderHistoryFiles(row) {
   files.append(historyGraphThread(row));
   const entry = commitGraph.details.get(id);
   if (!entry || entry.pending) {
-    files.append(element('span', 'sc-muted', 'Loading changed files…'));
+    files.append(element('span', 'sc-muted', msg('Loading changed files…')));
     return files;
   }
   if (entry.error) {
-    const retry = control('Retry', () => void readHistoryCommit(id));
+    const retry = control(msg('Retry'), () => void readHistoryCommit(id));
     retry.dataset.focusKey = 'history-retry:' + id;
     files.append(element('span', 'sc-muted', entry.error), retry);
     return files;
@@ -334,51 +348,51 @@ function renderHistoryFiles(row) {
     button.append(status, element('span', 'sc-history-file-path', path));
     bindTooltip(button, path);
     bindContextMenu(button, () => [
-      { label: 'Open file diff', run: () => openCommit(id, file.path) },
-      { label: 'Copy file path', run: () => copyText(file.path) },
+      { label: msg('Open file diff'), run: () => openCommit(id, file.path) },
+      { label: msg('Copy file path'), run: () => copyText(file.path) },
     ]);
     files.append(button);
   }
-  if (!entry.result.files.length) files.append(element('span', 'sc-muted', 'No changed files.'));
-  if (entry.result.filesTruncated) files.append(element('span', 'sc-muted', 'Additional files omitted.'));
+  if (!entry.result.files.length) files.append(element('span', 'sc-muted', msg('No changed files.')));
+  if (entry.result.filesTruncated) files.append(element('span', 'sc-muted', msg('Additional files omitted.')));
   return files;
 }
 
 function historyRowActions(row) {
-  if (row.comparison) return [{ label: 'Compare changes', run: () => openCompare(row.comparison) }];
+  if (row.comparison) return [{ label: msg('Compare changes'), run: () => openCompare(row.comparison) }];
   const { id, parents } = row.commit;
   const viewing = workbench.historyPath;
   const busy = !!workbench.busy || !!state.staging;
   const head = state.status?.head;
   return [
-    { label: 'Open commit details', run: () => openCommit(id) },
-    { label: commitGraph.expanded.has(id) ? 'Collapse changed files' : 'Expand changed files', run: () => toggleHistoryFiles(id) },
-    { label: 'Copy commit hash', run: () => copyText(id) },
-    { label: 'Copy commit message', run: async () => {
+    { label: msg('Open commit details'), run: () => openCommit(id) },
+    { label: msg(commitGraph.expanded.has(id) ? 'Collapse changed files' : 'Expand changed files'), run: () => toggleHistoryFiles(id) },
+    { label: msg('Copy commit hash'), run: () => copyText(id) },
+    { label: msg('Copy commit message'), run: async () => {
       const result = await readHistoryCommit(id);
       if (result) copyText(result.message);
       else if (commitGraph.details.get(id)?.error) showError(commitGraph.details.get(id).error);
     } },
     { separator: true },
-    { label: 'Compare with parent', disabled: !parents.length, run: () => openCompare({ from: parents[0], to: id, ...(viewing ? { path: viewing } : {}) }) },
-    { label: 'Compare with HEAD', disabled: !head || head === id, run: () => openCompare({ from: id, to: head }) },
-    { label: 'Compare with working copy', run: () => openCompare({ from: id }) },
+    { label: msg('Compare with parent'), disabled: !parents.length, run: () => openCompare({ from: parents[0], to: id, ...(viewing ? { path: viewing } : {}) }) },
+    { label: msg('Compare with HEAD'), disabled: !head || head === id, run: () => openCompare({ from: id, to: head }) },
+    { label: msg('Compare with working copy'), run: () => openCompare({ from: id }) },
     { separator: true },
-    { label: 'Create branch here…', disabled: busy, run: () => runCommand('createBranch', { startPoint: id }, [
-      field('name', 'Branch name'), field('checkout', 'Switch to this branch', { checkbox: true, value: true }),
+    { label: msg('Create branch here…'), disabled: busy, run: () => runCommand('createBranch', { startPoint: id }, [
+      field('name', msg('Branch name')), field('checkout', msg('Switch to this branch'), { checkbox: true, value: true }),
     ]) },
-    { label: 'Create tag here…', disabled: busy, run: () => runCommand('createTag', { ref: id }, [
-      field('name', 'Tag name'), field('message', 'Annotation', { optional: true }),
+    { label: msg('Create tag here…'), disabled: busy, run: () => runCommand('createTag', { ref: id }, [
+      field('name', msg('Tag name')), field('message', msg('Annotation'), { optional: true }),
     ]) },
-    { label: 'Checkout detached', disabled: busy || (state.status?.detached && head === id), run: () => runCommand('checkoutDetached', { ref: id }) },
-    { label: 'Cherry-pick', disabled: busy || parents.length > 1, run: () => runCommand('cherryPick', { ref: id }) },
+    { label: msg('Checkout detached'), disabled: busy || (state.status?.detached && head === id), run: () => runCommand('checkoutDetached', { ref: id }) },
+    { label: msg('Cherry-pick'), disabled: busy || parents.length > 1, run: () => runCommand('cherryPick', { ref: id }) },
   ];
 }
 
 function historyRow(row) {
   const { id, commit, comparison, kind } = row;
   const expanded = commitGraph.expanded.has(id);
-  const label = comparison ? (kind === 'incoming' ? 'Incoming changes' : 'Outgoing changes') : commit.subject || '(empty subject)';
+  const label = comparison ? msg(kind === 'incoming' ? 'Incoming changes' : 'Outgoing changes') : commit.subject || msg('(empty subject)');
   const entry = element('div', 'sc-history-entry');
   const item = element('div', 'sc-history-item');
   item.dataset.kind = kind;
@@ -397,7 +411,8 @@ function historyRow(row) {
     toggle.dataset.focusKey = 'history-expand:' + id;
     toggle.setAttribute('aria-expanded', String(expanded));
     if (expanded) toggle.setAttribute('aria-controls', 'history-files-' + id);
-    toggle.setAttribute('aria-label', (expanded ? 'Collapse' : 'Expand') + ' changed files for ' + label.slice(0, 100));
+    const subject = commit.subject?.slice(0, 100) || label;
+    uiAttr(toggle, 'aria-label', msg(expanded ? 'Collapse changed files for {subject}' : 'Expand changed files for {subject}', { subject }));
     toggle.append(icon('chevron'));
     item.append(toggle);
   }
@@ -437,25 +452,32 @@ function renderHistoryStatus() {
   const status = el('history-state');
   const refs = el('history-refs');
   const path = workbench.historyPath;
-  const scopeLabel = path ? 'File history' : historyScopeLabels[commitGraph.scope];
-  const selectedStatus = commitGraph.refs.length + (commitGraph.refs.length === 1 ? ' selected reference' : ' selected references');
+  const count = commitGraph.refs.length;
+  const scopeLabel = historyScopeLabel();
+  const selectedStatus = msg(count === 1 ? '{count} selected reference' : '{count} selected references', { count });
   const scopeStatus = path || (commitGraph.scope === 'selected' ? selectedStatus : commitGraph.scope === 'current' ? scopeLabel : '');
-  const message = commitGraph.error?.message || (commitGraph.locating ? 'Locating current commit…' : '') ||
-    (commitGraph.loading ? (commitGraph.loading.more ? 'Loading more commits…' : 'Loading commits…') : '') ||
-    commitGraph.notice || (history && !history.commits.length ? 'No commits.' : '') || (!state.status ? 'Choose a repository to view its history.' : '');
+  const message = commitGraph.error?.message || (commitGraph.locating ? msg('Locating current commit…') : '') ||
+    (commitGraph.loading ? msg(commitGraph.loading.more ? 'Loading more commits…' : 'Loading commits…') : '') ||
+    commitGraph.notice || (history && !history.commits.length ? msg('No commits.') : '') ||
+    (!state.status ? msg('Choose a repository to view its history.') : '');
   const statusKey = JSON.stringify([scopeStatus, message, commitGraph.error?.more]);
   if (commitGraph.statusKey !== statusKey) {
     commitGraph.statusKey = statusKey;
-    status.textContent = [scopeStatus, message].filter(Boolean).join(' · ');
+    status.replaceChildren();
+    if (scopeStatus || message) {
+      const summary = scopeStatus && message ? msg('{scope} · {message}', { scope: scopeStatus, message }) : scopeStatus || message;
+      status.append(element('span', '', summary));
+    }
     if (commitGraph.error) {
       const { more } = commitGraph.error;
-      status.append(' ', control('Retry', () => loadHistory({ more, reset: !more })));
+      status.append(' ', control(msg('Retry'), () => loadHistory({ more, reset: !more })));
     }
-    if (scopeStatus) status.append(' ', control('Clear filter', () => filterHistory(null, null)));
+    if (scopeStatus) status.append(' ', control(msg('Clear filter'), () => filterHistory(null, null)));
   }
-  el('history-heading').textContent = path ? 'File history' : 'Graph';
-  refs.textContent = path ? 'File' : commitGraph.scope === 'selected' ? commitGraph.refs.length + ' refs' : commitGraph.scope === 'current' ? 'Current' : 'All';
-  refs.setAttribute('aria-label', 'Graph references · ' + scopeLabel);
+  uiText(el('history-heading'), path ? msg('File history') : msg('Graph'));
+  const refsLabel = msg(count === 1 ? '{count} ref' : '{count} refs', { count });
+  uiText(refs, path ? msg('File') : commitGraph.scope === 'selected' ? refsLabel : msg(commitGraph.scope === 'current' ? 'Current' : 'All'));
+  uiAttr(refs, 'aria-label', msg('Graph references · {scope}', { scope: scopeLabel }));
   const paging = el('history-more');
   paging.hidden = history?.nextOffset == null || !!commitGraph.error;
   paging.disabled = !!commitGraph.loading || !!commitGraph.locating;
@@ -525,7 +547,7 @@ async function locateCurrentHistory() {
       }
       if (commitGraph.error) return;
       if (workbench.history?.nextOffset == null) {
-        commitGraph.notice = 'Current commit is outside this history view.';
+        commitGraph.notice = msg('Current commit is outside this history view.');
         return;
       }
       if (!await loadHistory({ more: true })) return;
@@ -549,7 +571,7 @@ function initializeHistory() {
     if (epoch === state.epoch) await loadHistory({ reset: true });
   };
   el('history-refs').onclick = chooseHistoryReferences;
-  bindTooltip(el('history-refs'), () => el('history-refs').getAttribute('aria-label'));
+  bindTooltip(el('history-refs'), () => msg('Graph references · {scope}', { scope: historyScopeLabel() }));
   el('history-compare').onclick = compare;
   el('history-current').onclick = locateCurrentHistory;
   el('history-fetch').onclick = fetch;
@@ -560,15 +582,15 @@ function initializeHistory() {
   el('history-actions').onclick = () => {
     const anchor = el('history-actions');
     openContextMenu([
-      { label: 'Choose references…', run: chooseHistoryReferences },
-      { label: 'Locate current commit', disabled: el('history-current').disabled, run: locateCurrentHistory },
-      { label: 'Compare changes…', disabled: el('history-compare').disabled, run: compare },
+      { label: msg('Choose references…'), run: chooseHistoryReferences },
+      { label: msg('Locate current commit'), disabled: el('history-current').disabled, run: locateCurrentHistory },
+      { label: msg('Compare changes…'), disabled: el('history-compare').disabled, run: compare },
       { separator: true },
-      { label: 'Fetch', disabled: el('history-fetch').disabled, run: fetch },
-      { label: 'Pull (fast-forward)', disabled: el('history-pull').disabled, run: pull },
-      { label: 'Push…', disabled: el('history-push').disabled, run: push },
-      { label: 'Refresh history', disabled: el('history-refresh').disabled, run: refreshGraph },
-    ], { anchor, label: 'Graph actions' });
+      { label: msg('Fetch'), disabled: el('history-fetch').disabled, run: fetch },
+      { label: msg('Pull (fast-forward)'), disabled: el('history-pull').disabled, run: pull },
+      { label: msg('Push…'), disabled: el('history-push').disabled, run: push },
+      { label: msg('Refresh history'), disabled: el('history-refresh').disabled, run: refreshGraph },
+    ], { anchor, label: msg('Graph actions') });
   };
   const scroller = el('history-scroll');
   scroller.addEventListener('scroll', () => {

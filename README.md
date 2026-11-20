@@ -17,6 +17,8 @@ Open **Git Workbench** from the panel picker. Reopen Codex if the new panel or v
 
 ## Workflows
 
+The language selector in the Source Control header switches between Simplified Chinese and English. The panel defaults to Simplified Chinese and remembers the selected language. Repository names, paths and Git content keep their original text.
+
 Repositories, Changes and Graph are visible together. Collapse sections or drag the divider to allocate room between changes and history. Hover a row to reveal its actions, or open its context menu with a right-click or Shift+F10. On narrow panels, Back returns from the preview to the originating row and scroll position.
 
 The commit button follows the checkout state. A clean, ahead or behind branch offers synchronization. Git operations in progress and unresolved conflicts have dedicated actions. Cmd/Ctrl+Enter in the message field triggers the commit flow.

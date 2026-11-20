@@ -1,12 +1,16 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Git Workbench</title><style>/* PANEL_CSS */</style></head><body>
+<title data-i18n>Git Workbench</title><style>/* PANEL_CSS */</style></head><body>
 <div class="sc-app" data-pane="workspace">
 <main class="sc-workspace">
   <aside id="scm-rail" class="sc-rail" aria-label="Source control">
     <header class="sc-rail-header">
-      <h1>Source Control</h1>
+      <h1 data-i18n>Source Control</h1>
       <div class="sc-actions">
+        <select id="panel-language" class="sc-language-select" aria-label="Interface language">
+          <option value="zh-CN" lang="zh-CN">简体中文</option>
+          <option value="en" lang="en">English</option>
+        </select>
         <button id="refresh" class="sc-icon-button" type="button" aria-label="Refresh repository" data-icon="refresh"></button>
         <button id="commands" class="sc-icon-button" type="button" aria-label="Source control actions" data-icon="more" aria-haspopup="menu"></button>
       </div>
@@ -14,14 +18,14 @@
     <section id="repositories-section" class="sc-region sc-repositories" aria-labelledby="repositories-heading">
       <div class="sc-region-bar">
         <h2 id="repositories-heading">
-          <button class="sc-region-toggle" type="button" data-section="repositories" data-icon="chevron" aria-expanded="true" aria-controls="repository-list">Repositories</button>
+          <button class="sc-region-toggle" type="button" data-section="repositories" data-icon="chevron" aria-expanded="true" aria-controls="repository-list"><span data-i18n>Repositories</span></button>
         </h2>
         <div class="sc-repository">
           <button id="project" class="sc-icon-button" type="button" data-icon="search" aria-label="Find or open checkout" aria-expanded="false" aria-controls="project-popover" aria-haspopup="dialog"></button>
     <div id="project-popover" class="sc-project-popover" role="dialog" aria-label="Choose repository" hidden>
       <div class="sc-search"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5"/><path d="m13 13 4 4"/></svg><input id="project-search" aria-label="Search repositories" placeholder="Search repositories or branches…" autocomplete="off"><kbd>esc</kbd></div>
       <div id="project-list" class="sc-project-list"></div>
-      <div class="sc-picker-footer"><button id="open-custom" type="button"><span aria-hidden="true">＋</span> Open another checkout…</button><form id="custom-form" hidden><label for="custom-path">Checkout path</label><div class="sc-custom-row"><input id="custom-path" placeholder="/absolute/path/to/checkout" autocomplete="off"><button type="submit">Open</button></div></form></div>
+      <div class="sc-picker-footer"><button id="open-custom" type="button"><span aria-hidden="true">＋</span> <span data-i18n>Open another checkout…</span></button><form id="custom-form" hidden><label for="custom-path" data-i18n>Checkout path</label><div class="sc-custom-row"><input id="custom-path" placeholder="/absolute/path/to/checkout" autocomplete="off"><button type="submit" data-i18n>Open</button></div></form></div>
     </div>
         </div>
       </div>
@@ -31,7 +35,7 @@
       <section id="changes-section" class="sc-region sc-changes" aria-labelledby="changes-heading">
         <div class="sc-region-bar">
           <h2 id="changes-heading">
-            <button class="sc-region-toggle" type="button" data-section="changes" data-icon="chevron" aria-expanded="true" aria-controls="changes-body">Changes</button>
+            <button class="sc-region-toggle" type="button" data-section="changes" data-icon="chevron" aria-expanded="true" aria-controls="changes-body"><span data-i18n>Changes</span></button>
           </h2>
           <div class="sc-actions">
             <span id="total-count" class="sc-count" hidden></span>
@@ -41,10 +45,10 @@
         </div>
         <div id="changes-body" class="sc-region-body sc-file-list">
           <form id="commit-form" class="sc-commit">
-            <label for="commit-message" class="sc-sr-only">Commit message</label>
+            <label for="commit-message" class="sc-sr-only" data-i18n>Commit message</label>
             <textarea id="commit-message" placeholder="Commit message" rows="2" spellcheck="true"></textarea>
             <div class="sc-commit-buttons">
-              <button id="commit-submit" class="sc-primary sc-primary-action" type="submit" disabled>Commit</button>
+              <button id="commit-submit" class="sc-primary sc-primary-action" type="submit" disabled><span data-i18n>Commit</span></button>
               <button id="commit-options" class="sc-control" aria-label="Commit and sync options" data-icon="chevron" type="button" aria-haspopup="menu"></button>
             </div>
           </form>
@@ -56,48 +60,48 @@
       <section id="history-section" class="sc-region sc-history" aria-labelledby="history-title">
         <div class="sc-region-bar">
           <h2 id="history-title">
-            <button class="sc-region-toggle" type="button" data-section="history" data-icon="chevron" aria-expanded="true" aria-controls="history-scroll"><span id="history-heading">Graph</span></button>
+            <button class="sc-region-toggle" type="button" data-section="history" data-icon="chevron" aria-expanded="true" aria-controls="history-scroll"><span id="history-heading" data-i18n>Graph</span></button>
           </h2>
           <div class="sc-actions sc-graph-toolbar">
-            <button type="button" class="sc-control" id="history-refs" aria-label="Choose graph references">All</button>
+            <button type="button" class="sc-control" id="history-refs" aria-label="Choose graph references" data-i18n>All</button>
             <button type="button" class="sc-icon-button" id="history-current" aria-label="Go to current commit" data-icon="target"></button>
             <button type="button" class="sc-icon-button" id="history-fetch" aria-label="Fetch" data-icon="fetch"></button>
             <button type="button" class="sc-icon-button" id="history-pull" aria-label="Pull" data-icon="pull"></button>
             <button type="button" class="sc-icon-button" id="history-push" aria-label="Push" data-icon="push"></button>
             <button type="button" class="sc-icon-button" id="history-refresh" aria-label="Refresh graph" data-icon="refresh"></button>
             <button type="button" class="sc-icon-button" id="history-actions" aria-label="Graph actions" data-icon="more" aria-haspopup="menu"></button>
-            <button type="button" id="history-compare" hidden>Compare</button>
+            <button type="button" id="history-compare" hidden data-i18n>Compare</button>
           </div>
         </div>
         <div id="history-scroll" class="sc-region-body sc-history-scroll">
           <p id="history-state" class="sc-history-state" role="status"></p>
           <div id="history-list" class="sc-history-list"></div>
-          <button type="button" class="sc-control sc-more" id="history-more" hidden>Load more commits</button>
+          <button type="button" class="sc-control sc-more" id="history-more" hidden data-i18n>Load more commits</button>
         </div>
       </section>
     </div>
   </aside>
   <section class="sc-viewer" aria-label="File and commit viewer">
     <div class="sc-viewer-toolbar">
-      <button id="preview-back" class="sc-control sc-preview-back" type="button" data-icon="back">Back</button>
-      <div class="sc-file-heading"><strong id="file-title">Preview</strong><span id="file-context">Select a file or commit</span></div>
+      <button id="preview-back" class="sc-control sc-preview-back" type="button" data-icon="back"><span data-i18n>Back</span></button>
+      <div class="sc-file-heading"><strong id="file-title" data-i18n>Preview</strong><span id="file-context" data-i18n>Select a file or commit</span></div>
       <div class="sc-view-modes" id="file-view-modes" role="group" aria-label="File view">
-        <button id="diff-mode" type="button" aria-pressed="true">Diff</button>
-        <button id="split-mode" type="button" aria-pressed="false">Split</button>
-        <button id="source-mode" type="button" aria-pressed="false">Source</button>
+        <button id="diff-mode" type="button" aria-pressed="true" data-i18n>Diff</button>
+        <button id="split-mode" type="button" aria-pressed="false" data-i18n>Split</button>
+        <button id="source-mode" type="button" aria-pressed="false" data-i18n>Source</button>
         <button id="file-actions" type="button" title="File actions" aria-label="File actions" aria-haspopup="dialog" disabled>•••</button>
       </div>
     </div>
     <div id="patch-controls" class="sc-viewer-actions sc-actions" hidden></div>
-    <div id="view-message" class="sc-view-message"><strong>Select a file or commit</strong><span>Review changes and Git history.</span></div>
+    <div id="view-message" class="sc-view-message"><strong data-i18n>Select a file or commit</strong><span data-i18n>Review changes and Git history.</span></div>
     <div id="code" class="sc-code" tabindex="0" aria-label="File content" hidden></div>
     <div id="images" class="sc-images" aria-label="Image preview" hidden></div>
     <div id="detail" class="sc-detail" hidden></div>
   </section>
 </main>
 <p id="error" class="sc-workspace-error" role="alert" hidden></p>
-<footer class="sc-footer"><span id="staging-message" class="sc-action-message" role="status" aria-live="polite"></span><span class="sc-updated"><span class="sc-status-dot" id="status-dot"></span><span id="time">Connecting to Git</span></span></footer>
-<div hidden><div id="context"></div><pre id="diagnostics">Waiting for host initialization</pre></div>
+<footer class="sc-footer"><span id="staging-message" class="sc-action-message" role="status" aria-live="polite"></span><span class="sc-updated"><span class="sc-status-dot" id="status-dot"></span><span id="time" data-i18n>Connecting to Git</span></span></footer>
+<div hidden><div id="context"></div><pre id="diagnostics" data-i18n>Waiting for host initialization</pre></div>
 </div>
 <dialog id="action-dialog" class="sc-dialog" aria-labelledby="action-title">
   <div class="sc-dialog-heading"><h2 id="action-title"></h2><button type="button" class="sc-control" id="action-close" aria-label="Close dialog">×</button></div>

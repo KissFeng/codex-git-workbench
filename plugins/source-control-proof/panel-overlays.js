@@ -123,7 +123,7 @@ function openContextMenu(entries, { anchor, event, label = 'Actions' } = {}) {
   const menu = element('div', 'sc-context-menu');
   menu.tabIndex = -1;
   menu.setAttribute('role', 'menu');
-  menu.setAttribute('aria-label', label);
+  uiAttr(menu, 'aria-label', msg(label));
   const items = [];
   let separated = false;
   for (const entry of entries) {
@@ -137,7 +137,7 @@ function openContextMenu(entries, { anchor, event, label = 'Actions' } = {}) {
       menu.append(divider);
       separated = false;
     }
-    const item = control(entry.label, () => {
+    const item = control(entry.rawLabel ? entry.label : msg(entry.label), () => {
       closeWorkbenchOverlays({ restoreFocus: true });
       entry.run?.(anchor);
     }, 'sc-menu-item');
@@ -194,7 +194,7 @@ function bindTooltip(anchor, content) {
       const value = typeof content === 'function' ? content() : content;
       const node = element('div', 'sc-workbench-overlay sc-tooltip');
       if (value instanceof Node) node.append(value);
-      else if (value) node.textContent = String(value);
+      else if (value) uiText(node, value);
       else { hide(); return; }
       node.id = 'sc-tooltip-' + ++workbenchTooltipId;
       node.setAttribute('role', 'tooltip');

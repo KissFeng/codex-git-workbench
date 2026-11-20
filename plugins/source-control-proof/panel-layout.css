@@ -28,6 +28,16 @@ body { padding: 0; }
   background: var(--surface);
 }
 .sc-rail-header { padding: 7px 8px 7px 12px; border-bottom: 1px solid var(--border); }
+.sc-language-select {
+  max-width: 8em;
+  padding: 3px 4px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+}
 .sc-region-bar { min-height: 30px; padding: 2px 6px 2px 4px; border-bottom: 1px solid var(--border); }
 .sc-region-bar h2, .sc-group-heading {
   min-width: 0;
@@ -88,17 +98,17 @@ body { padding: 0; }
 .sc-repo-branch { padding: 3px; max-width: 28%; font-size: 11px; }
 .sc-repo-sync { width: auto; padding: 3px; white-space: nowrap; font-size: 11px; font-variant-numeric: tabular-nums; }
 .sc-repo-children-toggle { width: 19px; padding: 2px; }
-.sc-repo-row > [aria-label="Repository actions"], .sc-file-actions {
+.sc-repo-row > .sc-repo-menu, .sc-file-actions {
   opacity: 0;
   pointer-events: none;
 }
-.sc-repo-row:hover > [aria-label="Repository actions"], .sc-repo-row:focus-within > [aria-label="Repository actions"],
+.sc-repo-row:hover > .sc-repo-menu, .sc-repo-row:focus-within > .sc-repo-menu,
 .sc-file-row:hover .sc-file-actions, .sc-file-row:focus-within .sc-file-actions {
   opacity: 1;
   pointer-events: auto;
 }
 @media (hover: none) {
-  .sc-repo-row > [aria-label="Repository actions"], .sc-file-actions { opacity: 1; pointer-events: auto; }
+  .sc-repo-row > .sc-repo-menu, .sc-file-actions { opacity: 1; pointer-events: auto; }
 }
 .sc-scm-split { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
 .sc-scm-split .sc-region { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }

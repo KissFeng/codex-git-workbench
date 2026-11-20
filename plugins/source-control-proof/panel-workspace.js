@@ -78,7 +78,7 @@ function setupWorkspaceShell() {
     toggle.onclick = () => setSectionCollapsed(toggle.dataset.section, !isSectionCollapsed(toggle.dataset.section));
   }
   for (const button of document.querySelectorAll('.sc-icon-button[aria-label]')) {
-    bindTooltip(button, () => button.getAttribute('aria-label'));
+    bindTooltip(button, () => currentUiAttr(button, 'aria-label'));
   }
   const trackFocus = event => {
     const node = event.target.closest('button');
@@ -129,9 +129,9 @@ function setupWorkspaceShell() {
 
 function repositoryButton(label, symbol, click) {
   const button = control('', click, 'sc-icon-button');
-  button.setAttribute('aria-label', label);
+  uiAttr(button, 'aria-label', msg(label));
   button.append(icon(symbol));
-  bindTooltip(button, label);
+  bindTooltip(button, msg(label));
   return button;
 }
 
@@ -158,6 +158,7 @@ function renderRepositories() {
     const status = current ? activeStatus : null;
     const name = linked ? checkout.path.split(/[\\/]/).filter(Boolean).at(-1) || checkout.path : project.label;
     const branchName = status?.branch || checkout.branch;
+    const branchLabel = status?.detached ? msg('Detached HEAD · {commit}', { commit: status.head?.slice(0, 7) || 'HEAD' }) : branchName;
     const entry = element('div', 'sc-repo-row' + (linked ? ' sc-repo-linked' : ''));
     entry.dataset.current = String(current);
     if (children.length) {
@@ -182,12 +183,12 @@ function renderRepositories() {
     }, 'sc-repo-select');
     button.dataset.focusKey = 'repo:' + checkout.path;
     button.setAttribute('aria-current', String(current));
-    button.setAttribute('aria-label', name + ' · ' + (branchName || 'checkout'));
+    uiAttr(button, 'aria-label', msg('{name} · {branch}', { name, branch: branchLabel || msg('Checkout') }));
     button.append(icon(linked ? 'branch' : 'repo'), element('span', 'sc-repo-name', name));
     entry.append(button);
-    bindTooltip(button, () => checkout.path + (branchName ? ' · ' + branchName : ''));
+    bindTooltip(button, branchLabel ? msg('{path} · {branch}', { path: checkout.path, branch: branchLabel }) : checkout.path);
     if (branchName) {
-      const branch = control(branchName, async event => {
+      const branch = control(branchLabel, async event => {
         if (!current) await switchCheckout(checkout.path);
         if (state.checkout !== checkout.path || !state.status) return;
         const anchor = event.currentTarget || [...list.querySelectorAll('[data-focus-key]')].find(
@@ -195,12 +196,12 @@ function renderRepositories() {
         chooseBranch(anchor);
       }, 'sc-repo-branch');
       branch.dataset.focusKey = 'branch:' + checkout.path;
-      branch.setAttribute('aria-label', 'Switch branch · ' + branchName);
+      uiAttr(branch, 'aria-label', msg('Switch branch · {branch}', { branch: branchLabel }));
       entry.append(branch);
-      bindTooltip(branch, branchName);
+      bindTooltip(branch, branchLabel);
     }
     if (status?.upstream && status.hasRemote && !status.detached) {
-      const sync = repositoryButton('Sync · ' + (status.behind ?? 0) + ' incoming, ' + (status.ahead ?? 0) + ' outgoing', 'refresh', event => {
+      const sync = repositoryButton(msg('Sync · {behind} incoming, {ahead} outgoing', { behind: status.behind ?? 0, ahead: status.ahead ?? 0 }), 'refresh', event => {
         showSynchronization(event.currentTarget, state.status);
       });
       sync.classList.add('sc-repo-sync');
@@ -211,6 +212,7 @@ function renderRepositories() {
     }
     const entries = () => repositoryMenuEntries(checkout, state.status);
     const more = repositoryButton('Repository actions', 'more', event => openContextMenu(entries(), { anchor: event.currentTarget }));
+    more.classList.add('sc-repo-menu');
     more.dataset.focusKey = 'repo-actions:' + checkout.path;
     entry.append(more);
     bindContextMenu(entry, entries, { anchor: button });
@@ -228,7 +230,7 @@ function renderRepositories() {
       for (const checkout of children) emitted.add(checkout.path);
     }
   }
-  if (!items.childElementCount) items.append(control('Open a checkout…', openPicker, 'sc-empty sc-empty-open'));
+  if (!items.childElementCount) items.append(control(msg('Open a checkout…'), openPicker, 'sc-empty sc-empty-open'));
   list.replaceChildren(items);
   list.scrollTop = scrollTop;
   restoreRailFocus(list, active);
@@ -254,13 +256,16 @@ function updateCommitButton() {
   if (button.dataset.kind !== primary.kind || button.dataset.label !== primary.label) {
     button.dataset.kind = primary.kind;
     button.dataset.label = primary.label;
-    button.replaceChildren(...(symbol ? [icon(symbol)] : []), element('span', '', primary.label));
+    const label = ['sync', 'diverged'].includes(primary.kind)
+      ? msg('Sync Changes {counts}', { counts: primary.label.slice('Sync Changes '.length) })
+      : msg(primary.label);
+    button.replaceChildren(...(symbol ? [icon(symbol)] : []), element('span', '', label));
   }
   button.disabled = busy || !primary.enabled;
   el('commit-options').disabled = busy || !state.status;
-  el('commit-message').placeholder = state.status && !state.status.detached
-    ? 'Message (⌘/Ctrl+Enter to commit on ' + state.status.branch + ')'
-    : 'Commit message';
+  uiAttr(el('commit-message'), 'placeholder', state.status && !state.status.detached
+    ? msg('Message (⌘/Ctrl+Enter to commit on {branch})', { branch: state.status.branch })
+    : msg('Commit message'));
 }
 
 function submitCommit() {
@@ -281,14 +286,14 @@ function submitCommit() {
   const message = el('commit-message').value.trim();
   if (!message) {
     el('commit-message').focus();
-    el('staging-message').textContent = 'Enter a commit message.';
+    uiText(el('staging-message'), msg('Enter a commit message.'));
     return;
   }
   if (kind === 'commit') return performAction('git_commit', { action: 'commit', message }, 'Commit staged');
   const checkout = state.checkout;
   actionForm('Stage all and commit', [], (_, confirmed) => {
     if (checkout === state.checkout) performAction('git_commit', { action: 'commitAll', message, confirmed }, 'Commit all changes');
-  }, { confirmation: 'Include all tracked and untracked changes in ' + checkout, submitLabel: 'Stage all and commit' });
+  }, { confirmation: msg('Include all tracked and untracked changes in {checkout}', { checkout }), submitLabel: 'Stage all and commit' });
 }
 
 function runPrimaryAction(anchor) {
