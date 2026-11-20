@@ -205,14 +205,16 @@ function renderRepositories(animatedProject = null) {
       entry.append(branch);
       bindTooltip(branch, branchLabel);
     }
-    if (status?.upstream && status.hasRemote && !status.detached) {
-      const sync = repositoryButton(msg('Sync · {behind} incoming, {ahead} outgoing', { behind: status.behind ?? 0, ahead: status.ahead ?? 0 }), 'refresh', event => {
+    const behind = status?.behind ?? 0;
+    const ahead = status?.ahead ?? 0;
+    if (status?.upstream && status.hasRemote && !status.detached && (behind > 0 || ahead > 0)) {
+      const sync = repositoryButton(msg('Sync · {behind} incoming, {ahead} outgoing', { behind, ahead }), 'refresh', event => {
         showSynchronization(event.currentTarget, state.status);
       });
       sync.classList.add('sc-repo-sync');
       sync.dataset.focusKey = 'sync:' + checkout.path;
       sync.disabled = !!status.operation;
-      sync.append(element('span', '', (status.behind ?? 0) + '↓ ' + (status.ahead ?? 0) + '↑'));
+      sync.append(element('span', '', behind + '↓ ' + ahead + '↑'));
       entry.append(sync);
     }
     const entries = () => repositoryMenuEntries(checkout, state.status);

@@ -142,17 +142,49 @@ test('commit shortcut routes only to commit while the main button follows sync s
   assert.deepEqual(calls, ['primary', 'commit']);
 });
 
+function element(tagName) {
+  return {
+    tagName, dataset: {}, children: [], classList: { add() {} },
+    get childElementCount() { return this.children.length; },
+    setAttribute() {}, contains: () => false,
+    append(...children) { this.children.push(...children); },
+    prepend(child) { this.children.unshift(child); },
+    replaceChildren(fragment) { this.children = fragment.children; },
+  };
+}
+
+test('repository sync is visible only when the current branch is ahead or behind', async () => {
+  const list = element('div');
+  const checkout = '/repo';
+  const status = { branch: 'main', upstream: 'origin/main', hasRemote: true, ahead: 0, behind: 0 };
+  const textElement = (tagName, _, textContent) => Object.assign(element(tagName), { textContent });
+  const context = {
+    state: { projects: [], checkout, status }, expandedProjects: new Set(),
+    matchMedia: () => ({ matches: false }),
+    document: { createDocumentFragment: () => element('fragment') },
+    el: () => list, element: textElement, control: label => textElement('button', '', label),
+    icon: () => element('svg'), msg: key => key, uiAttr() {},
+    bindTooltip() {}, bindContextMenu() {}, restoreRailFocus() {},
+  };
+  const renderRepositories = runInNewContext(await panelSection('panel-workspace.js') + '\nrenderRepositories', context);
+  const syncCount = () => {
+    renderRepositories();
+    const button = list.children[0].children.find(node => node.dataset.focusKey === 'sync:' + checkout);
+    return button?.children.at(-1).textContent;
+  };
+  assert.equal(syncCount(), undefined);
+  status.ahead = 1;
+  assert.equal(syncCount(), '0↓ 1↑');
+  status.ahead = 0;
+  status.behind = 2;
+  assert.equal(syncCount(), '2↓ 0↑');
+  status.behind = 0;
+  assert.equal(syncCount(), undefined);
+  status.ahead = status.behind = null;
+  assert.equal(syncCount(), undefined);
+});
+
 test('tracked and new working files share one changes group and retain their Git operations', async () => {
-  function element(tagName) {
-    return {
-      tagName, dataset: {}, children: [], classList: { add() {} },
-      get childElementCount() { return this.children.length; },
-      setAttribute() {}, contains: () => false,
-      append(...children) { this.children.push(...children); },
-      prepend(child) { this.children.unshift(child); },
-      replaceChildren(fragment) { this.children = fragment.children; },
-    };
-  }
   const nodes = new Map();
   const node = id => {
     if (!nodes.has(id)) nodes.set(id, element(id));
