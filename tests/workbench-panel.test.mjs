@@ -30,6 +30,8 @@ test('workbench tools restrict operations to the panel and reject unknown argume
   await assert.rejects(handle('tools/call', { name: 'git_history', arguments: { repoPath: '/unused', surprise: true } }), /Unknown argument/);
   const resource = await handle('resources/read', { uri: tools[0]._meta.ui.resourceUri });
   assert.match(resource.contents[0].text, /id="commit-form"/);
+  assert.match(resource.contents[0].text, /<textarea id="commit-message"[^>]*rows="1"[^>]*><\/textarea>\s*<button id="commit-submit"/);
+  assert.doesNotMatch(resource.contents[0].text, /id="(?:commit-options|history-current)"/);
   assert.match(resource.contents[0].text, /id="history-list"/);
 });
 

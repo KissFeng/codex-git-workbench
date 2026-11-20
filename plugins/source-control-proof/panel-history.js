@@ -1,7 +1,7 @@
 const commitGraph = {
   scope: 'all', refs: [], expanded: new Set(), details: new Map(), rows: new Map(), loading: null,
   stats: new Map(), statsLoading: new Map(),
-  error: null, notice: '', locating: null, located: null, referencePicker: null,
+  error: null, referencePicker: null,
 };
 const historyScopeLabels = {
   all: msg('All references'), current: msg('Current branch and upstream'), selected: msg('Selected references'),
@@ -20,9 +20,6 @@ function resetHistoryCheckout() {
   commitGraph.details.clear();
   commitGraph.loading = null;
   commitGraph.error = null;
-  commitGraph.notice = '';
-  commitGraph.locating = null;
-  commitGraph.located = null;
   if (commitGraph.referencePicker?.isConnected) el('action-dialog').close();
   commitGraph.referencePicker = null;
   el('history-scroll').scrollTop = 0;
@@ -56,7 +53,6 @@ function loadHistory({ reset = false, more = false } = {}) {
   const loading = { key, more };
   commitGraph.loading = loading;
   commitGraph.error = null;
-  commitGraph.notice = '';
   renderHistoryStatus();
   loading.promise = (async () => {
     try {
@@ -65,7 +61,6 @@ function loadHistory({ reset = false, more = false } = {}) {
         ...(more ? { offset: previous.nextOffset, cursor: previous.cursor } : {}),
       });
       if (!current()) return;
-      if (commitGraph.located !== result.head) commitGraph.located = null;
       workbench.history = { ...result, commits: [...(more ? previous.commits : []), ...result.commits] };
       workbench.historyKey = key;
       renderHistory();
@@ -92,9 +87,6 @@ function applyHistoryFilter(scope, refs, path = null, ref = null) {
   commitGraph.scope = scope;
   commitGraph.refs = refs;
   commitGraph.error = null;
-  commitGraph.notice = '';
-  commitGraph.located = null;
-  commitGraph.locating = null;
   commitGraph.loading = null;
   commitGraph.expanded.clear();
   workbench.historyRequest++;
@@ -121,49 +113,63 @@ function historyScopeLabel() {
 function chooseHistoryReferences() {
   if (!state.status) return;
   const form = element('form', 'sc-history-reference-form');
-  const modes = element('fieldset', 'sc-history-reference-modes');
-  modes.append(element('legend', '', msg('History scope')));
-  const filters = element('div', 'sc-history-reference-filter');
+  const toolbar = element('div', 'sc-history-reference-toolbar');
+  const searchBox = element('div', 'sc-history-reference-search');
   const search = element('input', 'sc-input');
   search.type = 'search';
-  uiAttr(search, 'placeholder', msg('Search branches and tags'));
-  uiAttr(search, 'aria-label', msg('Search branches and tags'));
+  search.autocomplete = 'off';
+  uiAttr(search, 'placeholder', msg('Search history references'));
+  uiAttr(search, 'aria-label', msg('Search history references'));
+  const count = element('span', 'sc-history-reference-count');
+  count.setAttribute('role', 'status');
+  const confirm = element('button', 'sc-primary', msg('Confirm'));
+  confirm.type = 'submit';
+  searchBox.append(search, count);
+  toolbar.append(searchBox, confirm);
+  const modes = element('fieldset', 'sc-history-reference-modes');
+  modes.append(element('legend', 'sc-sr-only', msg('History scope')));
   const results = element('div', 'sc-history-reference-results');
+  const presets = new Map();
+  const choices = new Map();
   const selected = new Set(commitGraph.refs);
-  const selectionCount = element('span', 'sc-muted');
-  const actions = element('div', 'sc-actions sc-dialog-buttons');
-  const submit = element('button', 'sc-primary', msg('Apply'));
-  submit.type = 'submit';
   let scope = commitGraph.scope;
   let references = null;
   let referenceError = false;
   let referenceLoading = false;
 
   function updateSelection() {
-    submit.disabled = scope === 'selected' && !selected.size;
-    selectionCount.hidden = scope !== 'selected';
-    uiText(selectionCount, msg('{count} selected', { count: selected.size }));
+    for (const [value, input] of presets) input.checked = scope === value;
+    for (const [ref, input] of choices) input.checked = scope === 'selected' && selected.has(ref);
+    confirm.disabled = scope === 'selected' && !selected.size;
+    uiText(count, msg('{count} selected', { count: scope === 'selected' ? selected.size : 1 }));
   }
 
-  for (const [value, label] of Object.entries(historyScopeLabels)) {
+  function checkbox(group, label, detail, onChange, symbol) {
     const option = element('label', 'sc-history-reference-choice');
     const input = element('input');
-    input.type = 'radio';
-    input.name = 'history-scope';
-    input.value = value;
-    input.checked = value === scope;
-    input.onchange = () => {
-      scope = value;
-      filters.hidden = value !== 'selected';
-      updateSelection();
-      if (value === 'selected' && !references && !referenceError) requestReferences();
-    };
-    option.append(input, element('span', '', label));
-    modes.append(option);
+    input.type = 'checkbox';
+    input.onchange = () => { onChange(input.checked); updateSelection(); };
+    option.append(input);
+    if (symbol) option.append(icon(symbol));
+    option.append(element('span', 'sc-history-reference-name', label));
+    if (detail) option.append(element('span', 'sc-history-reference-detail sc-muted', detail));
+    group.append(option);
+    return input;
+  }
+
+  for (const [value, name, description] of [
+    ['all', 'All', 'All history references'],
+    ['current', 'Automatic', 'Current branch and upstream'],
+  ]) {
+    presets.set(value, checkbox(modes, msg(name), msg(description), checked => {
+      scope = checked ? value : 'selected';
+      selected.clear();
+    }));
   }
 
   function renderMatches() {
     results.replaceChildren();
+    choices.clear();
     if (!references) {
       const message = referenceError ? msg('References could not be loaded.') : msg('Loading references…');
       results.append(element('p', 'sc-muted', message));
@@ -176,23 +182,17 @@ function chooseHistoryReferences() {
       const group = element('fieldset', 'sc-history-reference-group');
       group.append(element('legend', '', msg(label)));
       for (const item of items) {
-        const option = element('label', 'sc-history-reference-choice');
-        const input = element('input');
-        input.type = 'checkbox';
-        input.checked = selected.has(item.ref);
-        input.onchange = () => {
-          if (input.checked) selected.add(item.ref);
+        const input = checkbox(group, item.name, item.head?.slice(0, 7), checked => {
+          scope = 'selected';
+          if (checked) selected.add(item.ref);
           else selected.delete(item.ref);
-          updateSelection();
-        };
-        const name = element('span', '', item.name);
-        option.append(input, name);
-        if (item.current) option.append(element('span', 'sc-muted', msg('Current')));
-        group.append(option);
+        }, label === 'Remote branches' ? 'cloud' : null);
+        choices.set(item.ref, input);
       }
       results.append(group);
     }
     results.scrollTop = 0;
+    updateSelection();
   }
 
   async function requestReferences() {
@@ -200,7 +200,7 @@ function chooseHistoryReferences() {
     referenceLoading = true;
     referenceError = false;
     renderMatches();
-    references = await readReferences();
+    references = await readReferences({ includeSymbolic: true });
     referenceLoading = false;
     if (!form.isConnected || !el('action-dialog').open) return;
     referenceError = !references;
@@ -209,20 +209,17 @@ function chooseHistoryReferences() {
 
   form.onsubmit = event => {
     event.preventDefault();
-    if (submit.disabled) return;
+    if (confirm.disabled) return;
     el('action-dialog').close();
     applyHistoryFilter(scope, [...selected]);
   };
-  filters.hidden = scope !== 'selected';
   search.oninput = renderMatches;
-  filters.append(search, results);
-  actions.append(selectionCount, control(msg('Cancel'), () => el('action-dialog').close()), submit);
-  form.append(modes, filters, actions);
+  form.append(toolbar, modes, results);
   updateSelection();
   commitGraph.referencePicker = form;
   openAction(msg('Graph references'), form);
-  (filters.hidden ? modes.querySelector(':checked') : search)?.focus();
-  if (!filters.hidden) requestReferences();
+  search.focus();
+  requestReferences();
 }
 
 function graphSvg(tag, attrs) {
@@ -520,7 +517,6 @@ function historyRow(row) {
   const entry = element('div', 'sc-history-entry');
   const item = element('div', 'sc-history-item');
   item.dataset.kind = kind;
-  item.dataset.located = String(commitGraph.located === id);
   item.style.setProperty('--history-graph-width', historyGraphWidth(row.columns) + 'px');
   const activate = () => {
     if (comparison) return openCompare(comparison);
@@ -581,9 +577,9 @@ function renderHistoryStatus() {
   const scopeLabel = historyScopeLabel();
   const selectedStatus = msg(count === 1 ? '{count} selected reference' : '{count} selected references', { count });
   const scopeStatus = path || (commitGraph.scope === 'selected' ? selectedStatus : commitGraph.scope === 'current' ? scopeLabel : '');
-  const message = commitGraph.error?.message || (commitGraph.locating ? msg('Locating current commit…') : '') ||
+  const message = commitGraph.error?.message ||
     (commitGraph.loading ? msg(commitGraph.loading.more ? 'Loading more commits…' : 'Loading commits…') : '') ||
-    commitGraph.notice || (history && !history.commits.length ? msg('No commits.') : '') ||
+    (history && !history.commits.length ? msg('No commits.') : '') ||
     (!state.status ? msg('Choose a repository to view its history.') : '');
   const statusKey = JSON.stringify([scopeStatus, message, commitGraph.error?.more]);
   if (commitGraph.statusKey !== statusKey) {
@@ -601,12 +597,11 @@ function renderHistoryStatus() {
   }
   uiText(el('history-heading'), path ? msg('File history') : msg('Graph'));
   const refsLabel = msg(count === 1 ? '{count} ref' : '{count} refs', { count });
-  uiText(refs, path ? msg('File') : commitGraph.scope === 'selected' ? refsLabel : msg(commitGraph.scope === 'current' ? 'Current' : 'All'));
+  uiText(refs, path ? msg('File') : commitGraph.scope === 'selected' ? refsLabel : msg(commitGraph.scope === 'current' ? 'Automatic' : 'All'));
   uiAttr(refs, 'aria-label', msg('Graph references · {scope}', { scope: scopeLabel }));
   const paging = el('history-more');
   paging.hidden = history?.nextOffset == null || !!commitGraph.error;
-  paging.disabled = !!commitGraph.loading || !!commitGraph.locating;
-  el('history-current').disabled = !state.status?.head || !!commitGraph.locating;
+  paging.disabled = !!commitGraph.loading;
   const busy = !!(workbench.busy || state.staging);
   const canFetch = !!state.status?.hasRemote && !busy;
   const canSync = canFetch && !!state.status.upstream && !state.status.detached && !state.status.operation;
@@ -646,46 +641,6 @@ function renderHistory() {
   renderHistoryStatus();
 }
 
-async function locateCurrentHistory() {
-  if (!state.status?.head || commitGraph.locating) return;
-  const { head } = state.status;
-  const locator = { key: historyRequestKey() };
-  commitGraph.locating = locator;
-  commitGraph.notice = '';
-  renderHistoryStatus();
-  try {
-    await loadHistory();
-    while (commitGraph.locating === locator && state.status && locator.key === historyRequestKey() && !isSectionCollapsed('history')) {
-      const node = el('history-list').querySelector('[data-focus-key="history:' + head + '"]');
-      if (node) {
-        commitGraph.located = head;
-        const item = node.closest('.sc-history-item');
-        const scroller = el('history-scroll');
-        el('history-list').querySelector('[data-located=true]')?.setAttribute('data-located', 'false');
-        item.dataset.located = 'true';
-        const row = item.getBoundingClientRect();
-        const bounds = scroller.getBoundingClientRect();
-        if (row.top < bounds.top || row.bottom > bounds.bottom) {
-          scroller.scrollTop += row.top - bounds.top - (scroller.clientHeight - row.height) / 2;
-        }
-        node.focus({ preventScroll: true });
-        return;
-      }
-      if (commitGraph.error) return;
-      if (workbench.history?.nextOffset == null) {
-        commitGraph.notice = msg('Current commit is outside this history view.');
-        return;
-      }
-      if (!await loadHistory({ more: true })) return;
-    }
-  } finally {
-    if (commitGraph.locating === locator) {
-      commitGraph.locating = null;
-      renderHistoryStatus();
-    }
-  }
-}
-
 function initializeHistory() {
   const compare = () => compareForm();
   const fetch = () => runCommand('fetch');
@@ -699,7 +654,6 @@ function initializeHistory() {
   el('history-refs').onclick = chooseHistoryReferences;
   bindTooltip(el('history-refs'), () => msg('Graph references · {scope}', { scope: historyScopeLabel() }));
   el('history-compare').onclick = compare;
-  el('history-current').onclick = locateCurrentHistory;
   el('history-fetch').onclick = fetch;
   el('history-pull').onclick = pull;
   el('history-push').onclick = push;
@@ -709,7 +663,6 @@ function initializeHistory() {
     const anchor = el('history-actions');
     openContextMenu([
       { label: msg('Choose references…'), run: chooseHistoryReferences },
-      { label: msg('Locate current commit'), disabled: el('history-current').disabled, run: locateCurrentHistory },
       { label: msg('Compare changes…'), disabled: el('history-compare').disabled, run: compare },
       { separator: true },
       { label: msg('Fetch'), disabled: el('history-fetch').disabled, run: fetch },
@@ -720,7 +673,7 @@ function initializeHistory() {
   };
   const scroller = el('history-scroll');
   scroller.addEventListener('scroll', () => {
-    if (commitGraph.loading || commitGraph.error || commitGraph.locating) return;
+    if (commitGraph.loading || commitGraph.error) return;
     if (scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= 120) loadHistory({ more: true });
   }, { passive: true });
   renderHistoryStatus();

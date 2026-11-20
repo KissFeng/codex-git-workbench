@@ -1,5 +1,5 @@
 const el = id => document.getElementById(id);
-const groups = [['conflicts', 'Merge Changes'], ['staged', 'Staged Changes'], ['unstaged', 'Changes'], ['untracked', 'Untracked Files']];
+const groups = [['conflicts', 'Merge Changes'], ['staged', 'Staged Changes'], ['unstaged', 'Changes']];
 const collapsedFileGroups = new Set();
 const state = { checkout: null, status: null, selection: null, mode: 'diff', projects: [], homeDirectory: '', epoch: 0, viewRequest: 0, statusRequest: 0, staging: null, refreshEpoch: null, hostContext: {} };
 const pending = new Map();
@@ -30,7 +30,8 @@ function icon(name, className = '') {
   Object.assign(paths, {
     refresh: 'M20 7v5h-5M4 17v-5h5M6 7a7 7 0 0 1 11.5-1L20 9M4 15l2.5 3A7 7 0 0 0 18 17',
     search: 'M15 15l5 5M17 10a7 7 0 1 1-14 0 7 7 0 0 1 14 0',
-    back: 'M19 12H5m6-6-6 6 6 6', target: 'M20 12a8 8 0 1 1-16 0 8 8 0 0 1 16 0M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0',
+    back: 'M19 12H5m6-6-6 6 6 6',
+    cloud: 'M7 18h11a4 4 0 1 0-.6-7.95A6 6 0 0 0 6 11a3.5 3.5 0 0 0 1 7Z',
     tree: 'M5 4v14h6M5 10h6m0-2h7v4h-7zm0 8h7v4h-7z', more: 'M4 12h.5m7.25 0h.5m7.25 0h.5',
     fetch: 'M12 3v12m-4-4 4 4 4-4m-11 8h14', pull: 'M12 4v13m-5-5 5 5 5-5M5 20h14',
     push: 'M12 20V7m-5 5 5-5 5 5M5 4h14', diff: 'M9 4H4v16h5m6-16h5v16h-5m-5-8h4',
@@ -142,8 +143,11 @@ function renderFiles() {
   const focus = el('files').contains(document.activeElement) ? railFocusKey(document.activeElement) : null;
   const rendered = document.createDocumentFragment();
   for (const [key, title] of groups) {
-    const rows = state.status?.[key] || [];
+    const files = state.status?.[key] || [];
+    const rows = key === 'unstaged' ? [...files, ...(state.status?.untracked || [])]
+      .sort((a, b) => a.path.localeCompare(b.path)) : files;
     if (!rows.length) continue;
+    const makeFileRow = file => workingFileRow(file, file.status === '??' ? 'untracked' : key);
     let open = !collapsedFileGroups.has(key);
     let contents;
     const section = element('section', 'sc-group');
@@ -153,7 +157,7 @@ function renderFiles() {
       if (open) {
         collapsedFileGroups.delete(key);
         if (!contents) {
-          contents = fileTreeItems(rows, key, file => workingFileRow(file, key));
+          contents = fileTreeItems(rows, key, makeFileRow);
           contents.hidden = true;
           section.append(contents);
         }
@@ -168,6 +172,7 @@ function renderFiles() {
     actions.append(element('span', 'sc-count', rows.length));
     const entries = () => groupMenuEntries(key);
     for (const entry of entries()) {
+      if (entry.menuOnly) continue;
       const action = repositoryButton(entry.label, entry.symbol, entry.run);
       action.disabled = !!entry.disabled;
       action.dataset.focusKey = 'group-action:' + key + ':' + entry.symbol;
@@ -177,7 +182,7 @@ function renderFiles() {
     heading.append(toggle, actions);
     section.append(heading);
     if (open) {
-      contents = fileTreeItems(rows, key, file => workingFileRow(file, key));
+      contents = fileTreeItems(rows, key, makeFileRow);
       section.append(contents);
     }
     rendered.append(section);
@@ -248,7 +253,8 @@ function workingFileRow(file, group) {
 function renderStatus(data) {
   state.checkout = data.checkout; state.status = data;
   for (const project of state.projects) for (const checkout of project.checkouts) if (checkout.path === data.checkout) checkout.branch = data.branch;
-  const count = new Set(groups.flatMap(([group]) => data[group].map(file => file.path))).size;
+  const fileGroups = [...groups.map(([group]) => data[group]), data.untracked];
+  const count = new Set(fileGroups.flatMap(files => files.map(file => file.path))).size;
   el('total-count').textContent = count;
   el('total-count').hidden = !count;
   uiText(el('context'), msg('Checkout source: {source}', { source: data.contextSource }));
@@ -264,7 +270,7 @@ function renderStatus(data) {
   }
   renderPicker();
   renderRepositories();
-  const changes = JSON.stringify(groups.map(([group]) => data[group]));
+  const changes = JSON.stringify(fileGroups);
   if (changes !== workbench.changes) {
     workbench.changes = changes;
     renderFiles();

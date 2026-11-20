@@ -63,12 +63,13 @@ test('graph query distinguishes all refs, current tips, selected full refs and f
 });
 
 test('reference filtering preserves grouped kinds and distinct full names', () => {
-  const one = { ref: 'refs/heads/main', name: 'main', current: true };
+  const one = { ref: 'refs/heads/main', name: 'main', current: true, head: '2143f17abcdef' };
   const two = { ref: 'refs/remotes/team/main', name: 'team/main' };
   const three = { ref: 'refs/tags/main', name: 'main' };
   const data = { branches: [one, { ref: 'refs/heads/topic', name: 'topic' }], remoteBranches: [two], tags: [three] };
   assert.deepEqual(matchingHistoryReferences(data, ' MAIN ').map(group => group.items), [[one], [two], [three]]);
   assert.deepEqual(matchingHistoryReferences(data, 'refs/tags').map(group => group.items), [[three]]);
+  assert.deepEqual(matchingHistoryReferences(data, '2143F17').map(group => group.items), [[one]]);
   assert.deepEqual(matchingHistoryReferences(data, 'missing'), []);
 });
 
@@ -100,7 +101,7 @@ function historyPanel({ renderRows = false } = {}) {
   }
   function node() {
     return {
-      scrollTop: 0, scrollLeft: 0, attrs: {}, children: [], dataset: {}, style: { setProperty() {} },
+      value: '', scrollTop: 0, scrollLeft: 0, attrs: {}, children: [], dataset: {}, style: { setProperty() {} },
       setAttribute(name, value) { this.attrs[name] = String(value); },
       getAttribute(name) { return this.attrs[name] ?? null; },
       removeAttribute(name) { delete this.attrs[name]; },
@@ -142,7 +143,7 @@ function historyPanel({ renderRows = false } = {}) {
     workbench: { history: null, historyRequest: 0 },
     document: { createElementNS: node, createDocumentFragment: () => Object.assign(node(), { fragment: true }) },
     window: { matchMedia: () => ({ matches: true }) },
-    buildHistoryGraph, historyQuery, historyRefTags,
+    buildHistoryGraph, historyQuery, historyRefTags, matchingHistoryReferences,
     collapsed: false,
     isSectionCollapsed: () => panel.collapsed,
     callTool: (name, args) => new Promise((resolve, reject) => requests.push({ name, args, resolve, reject })),
@@ -396,27 +397,46 @@ test('paging uses the existing cursor, keeps loaded commits on failure and reloa
   assert.equal(panel.workbench.history.commits[0].id, 'J');
 });
 
-test('locate current commit requests later pages and focuses the commit within the graph scroller', async () => {
+test('reference picker opens with searchable grouped refs and applies a selection only on confirmation', async () => {
   const { panel, requests } = historyPanel();
-  const scroller = panel.el('history-scroll');
-  scroller.clientHeight = 100;
-  scroller.getBoundingClientRect = () => ({ top: 0, bottom: 100 });
-  const item = { dataset: {}, getBoundingClientRect: () => ({ top: 120, bottom: 148, height: 28 }) };
-  let focused = false;
-  panel.el('history-list').querySelector = selector => selector === '[data-focus-key="history:H"]' &&
-    panel.workbench.history?.commits.some(commit => commit.id === 'H') ? {
-      closest: () => item,
-      focus: ({ preventScroll }) => { focused = preventScroll; },
-    } : null;
-
-  const locate = panel.locateCurrentHistory();
-  requests[0].resolve({ commits: [commit('topic')], nextOffset: 1, cursor: 'first-page' });
+  const dialog = panel.el('action-dialog');
+  dialog.close = () => { dialog.open = false; };
+  panel.openAction = (_, form) => { dialog.replaceChildren(form); dialog.open = true; };
+  panel.readReferences = async () => ({
+    branches: [{ name: 'main', ref: 'refs/heads/main', head: '2143f17abcdef' }],
+    remoteBranches: [{ name: 'origin/HEAD', ref: 'refs/remotes/origin/HEAD', head: '2143f17abcdef' }],
+    tags: [{ name: 'v1', ref: 'refs/tags/v1', head: '2143f17abcdef' }],
+  });
+  panel.setSectionCollapsed = () => {};
+  panel.chooseHistoryReferences();
   await new Promise(resolve => setImmediate(resolve));
-  assert.equal(requests[1].args.cursor, 'first-page');
-  requests[1].resolve({ commits: [commit('H')], nextOffset: null });
-  await locate;
-
-  assert.equal(item.dataset.located, 'true');
-  assert.equal(focused, true);
-  assert.equal(scroller.scrollTop, 84);
+  const form = dialog.firstChild;
+  const [toolbar, modes, results] = form.children;
+  const [searchBox, confirm] = toolbar.children;
+  const [search, count] = searchBox.children;
+  const [, all, automatic] = modes.children;
+  assert.equal(panel.document.activeElement, search);
+  assert.equal(all.firstChild.checked, true);
+  assert.equal(automatic.firstChild.checked, false);
+  assert.equal(count.textContent, '1 selected');
+  assert.match(results.textContent, /Local branches.*main2143f17.*Remote branches.*origin\/HEAD2143f17.*Tags.*v1/);
+  const select = (input, checked = true) => { input.checked = checked; input.onchange(); };
+  select(results.children[0].children[1].firstChild);
+  assert.equal(all.firstChild.checked, false);
+  search.value = 'origin/';
+  search.oninput();
+  assert.equal(results.children.length, 1);
+  select(results.firstChild.children[1].firstChild);
+  assert.equal(count.textContent, '2 selected');
+  select(automatic.firstChild);
+  assert.equal(count.textContent, '1 selected');
+  assert.equal(results.firstChild.children[1].firstChild.checked, false);
+  select(automatic.firstChild, false);
+  assert.equal(confirm.disabled, true);
+  select(results.firstChild.children[1].firstChild);
+  assert.equal(requests.length, 0);
+  form.onsubmit({ preventDefault() {} });
+  assert.equal(dialog.open, false);
+  assert.deepEqual([...requests[0].args.refs], ['refs/remotes/origin/HEAD']);
+  requests[0].resolve({ commits: [] });
 });

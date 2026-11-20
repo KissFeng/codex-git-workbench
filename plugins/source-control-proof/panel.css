@@ -61,8 +61,6 @@ textarea:focus-visible, select:focus-visible { outline: 2px solid var(--accent);
 .sc-commit { display: grid; gap: 6px; padding: 10px; border-bottom: 1px solid var(--border); background: var(--surface); }
 .sc-commit label { font-size: 11px; font-weight: 600; color: var(--muted); }
 .sc-commit textarea { width: 100%; min-height: 40px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg); }
-.sc-commit-buttons { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px; }
-.sc-commit-buttons .sc-control { border: 1px solid var(--border); }
 .sc-group { padding: 3px 5px 6px; }
 .sc-group > h2 { margin: 0 5px 1px; min-height: 24px; text-transform: none; letter-spacing: 0; font-size: 11px; }
 .sc-group-actions { display: flex; color: var(--muted); align-items: center; gap: 4px; }

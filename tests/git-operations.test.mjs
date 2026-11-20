@@ -170,6 +170,18 @@ test('checks out a remote branch with tracking and reuses the existing tracking 
   assert.equal(git(repoPath, 'branch', '--show-current'), 'remote-feature');
 });
 
+test('reference listing can opt in to symbolic remote branches for graph history', async t => {
+  const { repoPath, refs } = await remoteFixture(t);
+  git(repoPath, 'symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main');
+  const regular = await refs();
+  assert.deepEqual(regular.remoteBranches.map(item => item.name), ['origin/main']);
+  const extended = await gitReferences({ repoPath, includeSymbolic: true });
+  assert.deepEqual(extended.remoteBranches.map(({ name, ref, head }) => [name, ref, head]), [
+    ['origin/HEAD', 'refs/remotes/origin/HEAD', regular.remoteBranches[0].head],
+    ['origin/main', 'refs/remotes/origin/main', regular.remoteBranches[0].head],
+  ]);
+});
+
 test('uses a merge for divergent pulls and fast-forwards where possible', async t => {
   const { repoPath, peer, run } = await remoteFixture(t);
   const peerHead = await commit(peer, 'peer fast-forward\n');

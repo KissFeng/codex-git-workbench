@@ -46,11 +46,8 @@
         <div id="changes-body" class="sc-region-body sc-file-list">
           <form id="commit-form" class="sc-commit">
             <label for="commit-message" class="sc-sr-only" data-i18n>Commit message</label>
-            <textarea id="commit-message" placeholder="Commit message" rows="2" spellcheck="true"></textarea>
-            <div class="sc-commit-buttons">
-              <button id="commit-submit" class="sc-primary sc-primary-action" type="submit" disabled><span data-i18n>Commit</span></button>
-              <button id="commit-options" class="sc-control" aria-label="Commit and sync options" data-icon="chevron" type="button" aria-haspopup="menu"></button>
-            </div>
+            <textarea id="commit-message" placeholder="Commit message" rows="1" spellcheck="true"></textarea>
+            <button id="commit-submit" class="sc-primary sc-primary-action" type="submit" disabled><span data-i18n>Commit</span></button>
           </form>
           <div id="files"></div>
         </div>
@@ -63,8 +60,7 @@
             <button class="sc-region-toggle" type="button" data-section="history" data-icon="chevron" aria-expanded="true" aria-controls="history-scroll"><span id="history-heading" data-i18n>Graph</span></button>
           </h2>
           <div class="sc-actions sc-graph-toolbar">
-            <button type="button" class="sc-control" id="history-refs" aria-label="Choose graph references" data-i18n>All</button>
-            <button type="button" class="sc-icon-button" id="history-current" aria-label="Go to current commit" data-icon="target"></button>
+            <button type="button" class="sc-control" id="history-refs" aria-label="Choose graph references" aria-haspopup="dialog" data-i18n>All</button>
             <button type="button" class="sc-icon-button" id="history-fetch" aria-label="Fetch" data-icon="fetch"></button>
             <button type="button" class="sc-icon-button" id="history-pull" aria-label="Pull" data-icon="pull"></button>
             <button type="button" class="sc-icon-button" id="history-push" aria-label="Push" data-icon="push"></button>

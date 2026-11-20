@@ -176,17 +176,20 @@ function groupMenuEntries(group) {
   const epoch = state.epoch;
   const entries = [{ label, symbol: action === 'stage' ? 'plus' : 'minus', disabled: busy,
     run: () => {
-      if (epoch === state.epoch) performAction('git_change', { action, group }, label);
+      if (epoch === state.epoch) performAction('git_change', group === 'unstaged' ? { action } : { action, group }, label);
     },
   }];
-  if (group === 'unstaged' || group === 'untracked') {
-    const discard = group === 'unstaged' ? 'Discard unstaged changes' : 'Remove untracked files';
-    entries.push({ label: discard, symbol: 'discard', disabled: busy, run: () => {
+  if (group !== 'unstaged') return entries;
+  for (const scope of ['unstaged', 'untracked']) {
+    if (!state.status?.[scope].length) continue;
+    const discard = scope === 'unstaged' ? 'Discard unstaged changes' : 'Remove untracked files';
+    const menuOnly = scope === 'untracked' && state.status.unstaged.length > 0;
+    entries.push({ label: discard, symbol: 'discard', disabled: busy, menuOnly, run: () => {
       if (epoch !== state.epoch || !state.status) return;
-      const expectedPaths = state.status[group].map(file => file.path);
+      const expectedPaths = state.status[scope].map(file => file.path);
       const total = expectedPaths.length;
       actionForm(discard, [], (_, confirmed) =>
-        performAction('git_change', { action: 'discard', group, confirmed, expectedPaths }, discard),
+        performAction('git_change', { action: 'discard', group: scope, confirmed, expectedPaths }, discard),
       { confirmation: msg(total === 1 ? '{action} · {count} file · {checkout}' : '{action} · {count} files · {checkout}', {
         action: msg(discard), count: total, checkout: state.checkout,
       }) });
@@ -520,7 +523,6 @@ function initializeWorkbench() {
   el('action-close').onclick = () => el('action-dialog').close();
   el('commands').onclick = event => showCommands(event.currentTarget, event);
   el('changes-actions').onclick = event => showChangesActions(event.currentTarget);
-  el('commit-options').onclick = event => showCommitOptions(event.currentTarget, event);
   el('file-actions').onclick = openFileActions;
   el('commit-form').onsubmit = event => {
     event.preventDefault();

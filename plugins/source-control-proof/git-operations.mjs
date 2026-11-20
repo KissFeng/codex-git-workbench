@@ -120,10 +120,10 @@ async function listRemotes(root) {
   }));
 }
 
-async function listRemoteBranches(root, remotes) {
+async function listRemoteBranches(root, remotes, includeSymbolic) {
   const refs = await listRefs(root, remotePrefix, ['refname', 'objectname', 'symref', 'subject']);
   const remoteNames = remotes.map(remote => remote.name).sort((a, b) => b.length - a.length);
-  return refs.filter(([, , symbolic]) => !symbolic).map(([ref, head, , subject]) => {
+  return refs.filter(([, , symbolic]) => includeSymbolic || !symbolic).map(([ref, head, , subject]) => {
     const name = ref.slice(remotePrefix.length);
     const remote = remoteNames.find(value => name.startsWith(value + '/')) || null;
     return { name, ref, head, remote, branch: remote ? name.slice(remote.length + 1) : null, subject };
@@ -191,12 +191,12 @@ async function operationState(root) {
   return type ? { type, conflicts } : null;
 }
 
-export async function gitReferences({ repoPath }) {
+export async function gitReferences({ repoPath, includeSymbolic = false }) {
   const root = await checkoutRoot(repoPath);
   const [branches, remotes, tags, stashes, worktrees, operation] = await Promise.all([
     listBranches(root), listRemotes(root), listTags(root), listStashes(root), listWorktrees(root), operationState(root),
   ]);
-  const remoteBranches = await listRemoteBranches(root, remotes);
+  const remoteBranches = await listRemoteBranches(root, remotes, includeSymbolic);
   return { branches, remoteBranches, remotes, tags, stashes, worktrees, operation };
 }
 

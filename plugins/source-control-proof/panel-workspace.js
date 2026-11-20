@@ -261,17 +261,18 @@ function updateCommitButton() {
   const primary = scmPrimaryAction(state.status);
   const button = el('commit-submit');
   const busy = !!workbench.busy || !!state.staging;
-  const symbol = { sync: 'refresh', diverged: 'refresh', publish: 'push', conflicts: 'warning', continue: 'check', commit: 'check', commitAll: 'check' }[primary.kind];
   if (button.dataset.kind !== primary.kind || button.dataset.label !== primary.label) {
     button.dataset.kind = primary.kind;
     button.dataset.label = primary.label;
     const label = ['sync', 'diverged'].includes(primary.kind)
       ? msg('Sync Changes {counts}', { counts: primary.label.slice('Sync Changes '.length) })
       : msg(primary.label);
-    button.replaceChildren(...(symbol ? [icon(symbol)] : []), element('span', '', label));
+    const commit = ['none', 'commit', 'commitAll'].includes(primary.kind);
+    button.replaceChildren(element('span', '', commit ? msg('Commit') : label));
+    uiAttr(button, 'aria-label', label);
+    uiAttr(button, 'title', label);
   }
   button.disabled = busy || !primary.enabled;
-  el('commit-options').disabled = busy || !state.status;
   uiAttr(el('commit-message'), 'placeholder', state.status && !state.status.detached
     ? msg('Message (⌘/Ctrl+Enter to commit on {branch})', { branch: state.status.branch })
     : msg('Commit message'));

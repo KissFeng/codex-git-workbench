@@ -42,7 +42,7 @@ const definitions = [
     action: choices('commit', 'commitAll', 'amend', 'undoCommit', 'commitEmpty'),
     message: string, signed: boolean, signoff: boolean, noVerify: boolean, all: boolean, confirmed: boolean,
   }, ['action'], true],
-  ['git_references', 'Read branches, tags, remotes, stashes and worktrees', operations, 'gitReferences', {}],
+  ['git_references', 'Read branches, tags, remotes, stashes and worktrees', operations, 'gitReferences', { includeSymbolic: boolean }],
   ['git_operation', 'Run a selected Git operation', operations, 'gitOperation', {
     action: choices(...operationActions), name: string, startPoint: string, checkout: boolean,
     newName: string, force: boolean, ref: string, message: string, remote: string, branch: string,

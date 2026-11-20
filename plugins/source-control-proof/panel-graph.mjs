@@ -76,7 +76,8 @@ export function matchingHistoryReferences(refs, search) {
     { label: 'Remote branches', items: refs.remoteBranches },
     { label: 'Tags', items: refs.tags },
   ].map(({ label, items }) => ({ label, items: items.filter(item =>
-    item.name.toLowerCase().includes(query) || item.ref.toLowerCase().includes(query)) }))
+    item.name.toLowerCase().includes(query) || item.ref.toLowerCase().includes(query) ||
+    item.head?.toLowerCase().startsWith(query)) }))
     .filter(group => group.items.length);
 }
 

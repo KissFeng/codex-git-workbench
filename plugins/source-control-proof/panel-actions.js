@@ -99,11 +99,11 @@ function actionAnchor(trigger) {
   return trigger?.currentTarget ?? (trigger?.isConnected ? trigger : null);
 }
 
-async function readReferences() {
+async function readReferences({ includeSymbolic = false } = {}) {
   if (!state.checkout) return null;
   const epoch = state.epoch;
   try {
-    const refs = await callTool('git_references', { repoPath: state.checkout });
+    const refs = await callTool('git_references', { repoPath: state.checkout, ...(includeSymbolic ? { includeSymbolic } : {}) });
     return epoch === state.epoch ? refs : null;
   } catch (error) {
     if (epoch === state.epoch) showError(error.message);

@@ -93,12 +93,17 @@ body { padding: 0; }
 .sc-repository { position: relative; flex: none; }
 .sc-project-popover { left: auto; right: 0; width: min(320px, calc(100vw - 16px)); max-width: none; }
 .sc-repo-row {
+  --disclosure-width: 19px;
   display: flex;
   align-items: center;
   gap: 3px;
   padding: 1px 3px;
   border-radius: 5px;
   color: var(--muted);
+}
+.sc-repo-row:not(:has(.sc-repo-children-toggle))::before {
+  content: '';
+  flex: 0 0 var(--disclosure-width);
 }
 .sc-repo-row:hover, .sc-file-row:hover { background: var(--hover); }
 .sc-repo-row[data-current=true], .sc-file-row[data-selected=true] { background: var(--selection); color: var(--text); }
@@ -110,7 +115,7 @@ body { padding: 0; }
 .sc-repo-name { font-weight: 550; }
 .sc-repo-branch { padding: 3px; max-width: 28%; font-size: 11px; }
 .sc-repo-sync { width: auto; padding: 3px; white-space: nowrap; font-size: 11px; font-variant-numeric: tabular-nums; }
-.sc-repo-children-toggle { width: 19px; padding: 2px; }
+.sc-repo-children-toggle { flex: 0 0 var(--disclosure-width); padding: 2px; }
 .sc-repo-row > .sc-repo-menu, .sc-file-actions {
   opacity: 0;
   pointer-events: none;
@@ -140,22 +145,34 @@ body { padding: 0; }
 }
 .sc-scm-divider:hover, .sc-scm-divider:focus-visible { background: var(--selection); outline: 1px solid var(--accent); outline-offset: -1px; }
 .sc-commit {
+  --commit-row-height: 27px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
   background: var(--sidebar);
   gap: 5px;
   padding: 8px;
   border: 0;
 }
-.sc-commit textarea { padding: 6px 7px; }
-.sc-commit-buttons { gap: 2px; }
-.sc-primary-action {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
+.sc-commit textarea {
+  min-height: var(--commit-row-height);
+  height: var(--commit-row-height);
+  padding: 4px 7px;
 }
-.sc-primary-action svg { width: 14px; height: 14px; }
-#commit-options { display: grid; place-items: center; padding: 3px 7px; }
-#commit-options svg { width: 14px; height: 14px; }
+.sc-primary-action {
+  display: grid;
+  place-items: center;
+  min-width: 3em;
+  max-width: 11em;
+  height: var(--commit-row-height);
+  padding-inline: .5em;
+}
+.sc-primary-action span {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .sc-group { padding: 0 4px 4px; }
 .sc-group-toggle { flex: 1; }
 .sc-group-heading { display: flex; align-items: center; justify-content: space-between; padding: 2px 3px; color: var(--muted); }

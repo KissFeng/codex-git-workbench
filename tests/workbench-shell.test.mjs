@@ -3,7 +3,7 @@ import { runInNewContext } from 'node:vm';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { setPanelContentVisible } from '../plugins/source-control-proof/panel-motion.mjs';
-import { scmPrimaryAction, scmSplitRatio } from '../plugins/source-control-proof/panel-model.mjs';
+import { buildFileTree, scmPrimaryAction, scmSplitRatio } from '../plugins/source-control-proof/panel-model.mjs';
 
 const panelSection = file => readFile(new URL('../plugins/source-control-proof/' + file, import.meta.url), 'utf8');
 const scopes = ['repositories', 'changes', 'history'];
@@ -140,4 +140,76 @@ test('commit shortcut routes only to commit while the main button follows sync s
   status.staged.push({ path: 'changed' });
   fixture.node('commit-message').onkeydown(key);
   assert.deepEqual(calls, ['primary', 'commit']);
+});
+
+test('tracked and new working files share one changes group and retain their Git operations', async () => {
+  function element(tagName) {
+    return {
+      tagName, dataset: {}, children: [], classList: { add() {} },
+      get childElementCount() { return this.children.length; },
+      setAttribute() {}, contains: () => false,
+      append(...children) { this.children.push(...children); },
+      prepend(child) { this.children.unshift(child); },
+      replaceChildren(fragment) { this.children = fragment.children; },
+    };
+  }
+  const nodes = new Map();
+  const node = id => {
+    if (!nodes.has(id)) nodes.set(id, element(id));
+    return nodes.get(id);
+  };
+  const actions = [];
+  const context = {
+    document: {
+      createElement: element, createElementNS: (_, tag) => element(tag),
+      createDocumentFragment: () => element('fragment'), getElementById: node,
+    },
+    buildFileTree, msg: key => key,
+    uiText: (node, text) => { node.textContent = text; },
+    bindTooltip() {}, restoreRailFocus() {}, renderRepositories() {},
+    bindContextMenu: (node, entries) => { node.menu = entries; },
+    repositoryButton: (label, symbol, onclick) => Object.assign(element('button'), { label, symbol, onclick }),
+  };
+  const sources = await Promise.all(['panel.js', 'panel-workbench.js'].map(panelSection));
+  const [panel] = sources[0].split(/^window.addEventListener\('message'/m);
+  const { status, tree } = runInNewContext(sources[1] + '\n' + panel + `
+    renderPicker = repositoryStatusChanged = savePreference = () => {};
+    ({ status: renderStatus, tree: value => { workbench.tree = value; renderFiles(); } })
+  `, context);
+  context.performAction = (tool, args) => actions.push([tool, { ...args }]);
+  context.actionForm = (_, fields, submit) => submit({}, true);
+  const tracked = { path: 'src/a.js', status: 'MM', change: 'M' };
+  const untracked = { path: 'src/b.js', status: '??' };
+  const snapshot = { checkout: '/repo', unstaged: [tracked], untracked: [untracked], staged: [tracked], conflicts: [] };
+  status(snapshot);
+  const groups = node('files').children;
+  assert.deepEqual(groups.map(group => group.children[0].children[0].children[1].textContent), ['Staged Changes', 'Changes']);
+  assert.equal(node('total-count').textContent, 2);
+  const [heading, list] = groups[1].children;
+  const [trackedRow, untrackedRow] = list.children;
+  assert.equal(heading.children[1].children[0].textContent, 2);
+  assert.deepEqual([trackedRow, untrackedRow].map(row => [row.children[0].dataset.group, row.children[2].textContent]), [
+    ['unstaged', 'M'], ['untracked', 'U'],
+  ]);
+  heading.children[1].children[1].onclick();
+  assert.deepEqual(actions.shift(), ['git_change', { action: 'stage' }]);
+  assert.equal(heading.children[1].children.length, 3);
+  heading.children[1].children[2].onclick();
+  const [tool, discard] = actions.shift();
+  assert.equal(tool, 'git_change');
+  assert.equal(discard.group, 'unstaged');
+  assert.deepEqual([...discard.expectedPaths], [tracked.path]);
+  const remove = heading.menu().find(entry => entry.label === 'Remove untracked files');
+  remove.run();
+  assert.equal(actions[0][1].group, 'untracked');
+  assert.deepEqual([...actions[0][1].expectedPaths], [untracked.path]);
+  tree(true);
+  assert.equal(node('files').children[1].children[1].childElementCount, 1);
+  assert.equal(node('files').children[1].children[1].children[0].children[1].childElementCount, 2);
+  status({ ...snapshot, untracked: [] });
+  assert.equal(node('total-count').textContent, 1);
+  assert.equal(node('files').children[1].children[1].children[0].children[1].childElementCount, 1);
+  status({ ...snapshot, unstaged: [], staged: [] });
+  assert.equal(node('files').childElementCount, 1);
+  assert.equal(node('files').children[0].children[0].children[1].children[2].label, 'Remove untracked files');
 });
