@@ -1,8 +1,8 @@
-# Codex Git 工作台
+# Codex & Antigravity Git 工作台
 
 [English](README.md) · **简体中文**
 
-Codex 桌面端的本地 Git 工作台。查看差异、暂存更改，并管理提交、分支和工作树。
+面向 Codex 桌面端与 Antigravity 2.0 的本地 Git 工作台。查看差异、暂存更改，并管理提交、分支和工作树。
 
 [快速开始](#快速开始) · [功能](#功能) · [更新日志](CHANGELOG.md) · [反馈问题](https://github.com/KissFeng/codex-git-workbench/issues) · [参与贡献](CONTRIBUTING.md#参与贡献)
 
@@ -14,16 +14,45 @@ Codex 桌面端的本地 Git 工作台。查看差异、暂存更改，并管理
 
 ## 快速开始
 
-需要支持本地 MCP Apps 的 Codex 桌面端、Git 2.35 或更高版本，以及 Node.js 24 或更高版本。请确保 `git` 和 `node` 在 PATH 中。插件无需安装 npm 依赖。
+需要支持本地 MCP Apps 的 **Codex 桌面端** 或 **Antigravity 2.0**、Git 2.35 或更高版本，以及 Node.js 22+（推荐 24+）。请确保 `git` 和 `node` 在 PATH 中。插件无需安装 npm 依赖。
 
-从 GitHub 安装 [v0.8.2](https://github.com/KissFeng/codex-git-workbench/releases/tag/v0.8.2)。
+### 一键自适配安装（自动识别 Codex / Antigravity）
+
+运行下面一条命令，会自动检测本机安装的 Codex / Antigravity 并安装对应插件（两者都装时会自动同时安装）：
+
+**macOS / Linux：**
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/KissFeng/codex-git-workbench/main/install.sh | sh
+```
+
+**Windows (PowerShell)：**
+
+```powershell
+irm https://raw.githubusercontent.com/KissFeng/codex-git-workbench/main/install.ps1 | iex
+```
+
+也支持通过 `--codex`、`--antigravity`、`--all`、`--ref <tag>` 手动指定目标或版本（例如 `curl -fsSL .../install.sh | sh -s -- --antigravity`）。
+
+### 手动安装
+
+**Codex 桌面端**（从 GitHub 安装 [v0.8.2](https://github.com/KissFeng/codex-git-workbench/releases/tag/v0.8.2)）：
 
 ```sh
 codex plugin marketplace add KissFeng/codex-git-workbench --ref v0.8.2
 codex plugin add codex-git-workbench@kissfeng-git-tools
 ```
 
-在面板选择器中打开 **Git Workbench**。如果当前 Codex 聊天关联了 Git 工作目录，工作台会自动选中对应的工作副本。也可以从仓库选择器查找已保存的项目和工作树，或打开其他工作副本。
+**Antigravity 2.0**（本地克隆仓库后执行）：
+
+```sh
+npm run install:antigravity
+```
+
+- 在 **Codex** 中，从面板选择器打开 **Git Workbench**。当前聊天关联 Git 工作目录时会自动选中对应工作副本。
+- 在 **Antigravity 2.0** 中，在右侧辅助面板打开 **Git Workbench**（可在 **Customizations → antigravity-git-workbench** 管理开关）。工作台会自动跟随当前对话工作区与宿主深浅主题。
+
+也可以从仓库选择器查找已保存的项目和工作树，或打开其他工作副本。
 
 在 macOS 和 Windows 上，可以用原生文件夹选择器打开工作副本，也可以通过文件菜单打开文件或其所在文件夹。仓库选择器也支持输入工作副本的绝对路径。
 

@@ -45,11 +45,72 @@ function icon(name, className = '') {
   return svg;
 }
 
+const isSidecarHost = typeof window !== 'undefined' && Boolean(window.sidecar);
+const sidecarPreferenceKey = 'antigravity-git-workbench.preferences';
+let activeWorkspaceUris = [];
+let autoTrackedCheckout = null;
+
+function sidecarTimeoutMs(name, args) {
+  return name === 'desktop_pick_checkout' && !args?.path ? 60000
+    : ['git_operation', 'git_commit'].includes(name) ? 200000 : 15000;
+}
+function syncSidecarTheme() {
+  if (!isSidecarHost) return;
+  const probe = document.createElement('span');
+  probe.style.cssText = 'position:absolute;visibility:hidden;color:var(--background, #fbfcfd)';
+  document.documentElement.appendChild(probe);
+  const color = getComputedStyle(probe).color;
+  probe.remove();
+  const nums = (color.match(/[\d.]+/g) || []).map(Number);
+  if (nums.length < 3) return;
+  const scale = color.startsWith('color(') ? 1 : 255;
+  const [r, g, b] = nums.slice(0, 3).map(v => v / scale);
+  const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  const theme = lum < 0.5 ? 'dark' : 'light';
+  state.hostContext = { ...state.hostContext, theme, host: 'antigravity-sidecar' };
+  document.documentElement.style.colorScheme = theme;
+}
+async function loadSidecarPreferences() {
+  let local = null;
+  try {
+    const raw = window.localStorage?.getItem(sidecarPreferenceKey);
+    if (raw) local = JSON.parse(raw);
+  } catch { /* Storage can be unavailable. */ }
+  try {
+    const res = await window.sidecar.fetch('/api/preferences', { method: 'GET' });
+    if (res.ok) {
+      const remote = await res.json();
+      if (remote && typeof remote === 'object' && Object.keys(remote).length) return { ...local, ...remote };
+    }
+  } catch { /* Fall back to local preferences. */ }
+  return local;
+}
 function request(method, params) {
+  if (isSidecarHost && method === 'tools/call') {
+    const limit = sidecarTimeoutMs(params?.name, params?.arguments);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), limit);
+    return window.sidecar.fetch('/api/tool', {
+      method: 'POST',
+      signal: controller.signal,
+      body: JSON.stringify({
+        name: params.name,
+        arguments: params.arguments || {},
+        conversationId: window.sidecar.conversationId || '',
+        workspaceUris: activeWorkspaceUris,
+      }),
+    }).then(async response => {
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload?.error || `Request failed (${response.status}).`);
+      return payload;
+    }, error => {
+      if (error?.name === 'AbortError') throw new Error('Git request timed out. Refresh to verify the result.');
+      throw error;
+    }).finally(() => clearTimeout(timeout));
+  }
   return new Promise((resolve, reject) => {
     const id = ++requestId;
-    const limit = params?.name === 'desktop_pick_checkout' && !params.arguments?.path ? 60000
-      : ['git_operation', 'git_commit'].includes(params?.name) ? 200000 : 15000;
+    const limit = sidecarTimeoutMs(params?.name, params?.arguments);
     const timeout = setTimeout(() => { pending.delete(id); reject(new Error('Git request timed out. Refresh to verify the result.')); }, limit);
     pending.set(id, { resolve, reject, timeout });
     window.parent.postMessage({ jsonrpc: '2.0', id, method, params }, '*');
@@ -71,10 +132,17 @@ function showActionMessage(message = '', { pending = false } = {}) {
   if (message && !pending) actionMessageTimer = setTimeout(() => uiText(node, ''), 4000);
 }
 function savePreference() {
-  window.openai?.setWidgetState?.({
+  if (!isSidecarHost && (typeof window === 'undefined' || !window.openai?.setWidgetState)) return;
+  const preferences = {
     mode: state.mode, tree: workbench.tree, split: shellState.legacyRatio,
     sectionSizes: shellState.sizes, collapsed: [...shellState.collapsed], language: panelLanguage,
-  });
+  };
+  if (isSidecarHost) {
+    try { window.localStorage?.setItem(sidecarPreferenceKey, JSON.stringify(preferences)); } catch { /* Ignore storage errors. */ }
+    window.sidecar.fetch('/api/preferences', { method: 'POST', body: JSON.stringify(preferences) }).catch(() => {});
+    return;
+  }
+  window.openai.setWidgetState(preferences);
 }
 function renderPicker() {
   const currentProject = currentCatalogProject();
@@ -519,6 +587,11 @@ el('open-custom').onclick = () => chooseCheckout();
 el('open-by-path').onclick = () => { el('custom-form').hidden = false; el('custom-path').focus(); };
 el('custom-form').onsubmit = event => { event.preventDefault(); const path = el('custom-path').value.trim(); if (path) chooseCheckout(path); };
 el('star-link').onclick = event => {
+  if (isSidecarHost) {
+    event.preventDefault();
+    window.open(event.currentTarget.href, '_blank', 'noopener,noreferrer');
+    return;
+  }
   event.preventDefault();
   request('ui/open-link', { url: event.currentTarget.href }).then(result => {
     if (result?.isError) showError('Could not open the GitHub link.');
@@ -542,10 +615,41 @@ initializePanelLanguage(el('panel-language'));
 initializeWorkbench();
 (async () => {
   try {
-    const host = await request('ui/initialize', { appInfo: { name: 'Git Workbench', version: '/* APP_VERSION */' }, appCapabilities: {}, protocolVersion: '2026-01-26' });
-    state.hostContext = host.hostContext || {}; if (state.hostContext.theme) document.documentElement.style.colorScheme = state.hostContext.theme;
-    window.parent.postMessage({ jsonrpc: '2.0', method: 'ui/notifications/initialized' }, '*');
-    const preferences = window.openai?.widgetState;
+    let preferences;
+    let initialLaunchOutput;
+    if (isSidecarHost) {
+      syncSidecarTheme();
+      new MutationObserver(() => syncSidecarTheme()).observe(document.documentElement, { attributes: true, attributeFilter: ['style'] });
+      preferences = await loadSidecarPreferences();
+      if (preferences?.language && preferences.language !== panelLanguage) {
+        const select = el('panel-language');
+        select.value = preferences.language;
+        setPanelLocale(preferences.language, document);
+      }
+      activeWorkspaceUris = await window.sidecar.getWorkspaceUris().catch(() => []);
+      initialLaunchOutput = await callTool('source_control_panel', {}).catch(() => null);
+      if (initialLaunchOutput?.checkout) autoTrackedCheckout = initialLaunchOutput.checkout;
+      window.sidecar.onWorkspaceChange?.(async uris => {
+        const next = Array.isArray(uris) ? uris : [];
+        const changed = JSON.stringify(next) !== JSON.stringify(activeWorkspaceUris);
+        activeWorkspaceUris = next;
+        if (!changed) return;
+        await refreshProjects().catch(error => showError(error.message));
+        if (!state.checkout || state.checkout === autoTrackedCheckout) {
+          const detected = await callTool('source_control_panel', {}).catch(() => null);
+          if (detected?.checkout && detected.checkout !== state.checkout) {
+            autoTrackedCheckout = detected.checkout;
+            await switchCheckout(detected.checkout);
+          }
+        }
+      });
+    } else {
+      const host = await request('ui/initialize', { appInfo: { name: 'Git Workbench', version: '/* APP_VERSION */' }, appCapabilities: {}, protocolVersion: '2026-01-26' });
+      state.hostContext = host.hostContext || {}; if (state.hostContext.theme) document.documentElement.style.colorScheme = state.hostContext.theme;
+      window.parent.postMessage({ jsonrpc: '2.0', method: 'ui/notifications/initialized' }, '*');
+      preferences = window.openai?.widgetState;
+      initialLaunchOutput = window.openai?.toolOutput;
+    }
     restoreWorkspacePreferences(preferences);
     if (['split', 'source'].includes(preferences?.mode)) setMode(preferences.mode);
     if (preferences?.tree) {
@@ -553,7 +657,7 @@ initializeWorkbench();
       el('tree-toggle').setAttribute('aria-pressed', 'true');
       uiAttr(el('tree-toggle'), 'aria-label', msg('Show file list'));
     }
-    finishLaunch(window.openai?.toolOutput);
+    finishLaunch(initialLaunchOutput);
     await refreshProjects().catch(error => showError(error.message));
     if (!state.checkout) {
       renderFiles();
