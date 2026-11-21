@@ -1,0 +1,7 @@
+{
+  "name": "antigravity-git-workbench",
+  "displayName": "Git Workbench",
+  "version": "0.8.1",
+  "description": "Local Git workbench for Antigravity: review diffs, stage changes, and manage commits, branches, stashes, conflicts, and worktrees.",
+  "logo": "assets/branch.svg"
+}

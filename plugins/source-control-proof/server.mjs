@@ -45,7 +45,8 @@ export async function panelHtml() {
       'panel-messages-preview.mjs', 'panel-model.mjs', 'panel-motion.mjs', 'panel-graph.mjs', 'panel-overlays.js', 'panel-actions.js',
       'panel-workspace.js', 'panel-history.js', 'panel-workbench.js', 'panel.js'].map(read)),
   ]);
-  return html.replace('/* PANEL_CSS */', () => styles.join('\n'))
+  return html.replace('<!-- HOST_PRELOAD -->', '')
+    .replace('/* PANEL_CSS */', () => styles.join('\n'))
     .replace('/* PANEL_JS */', () => scripts.join('\n').replace('/* APP_VERSION */', manifest.version));
 }
 export async function handle(method, params = {}) {
