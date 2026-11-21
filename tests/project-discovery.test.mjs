@@ -1,5 +1,6 @@
 import { tmpdir } from 'node:os';
 import assert from 'node:assert/strict';
+import { once } from 'node:events';
 import { mkdtemp, mkdir, writeFile, rm, cp, readFile } from 'node:fs/promises';
 import { execFileSync, spawn } from 'node:child_process';
 import { resolve, join } from 'node:path';
@@ -18,8 +19,10 @@ try {
   for (const [i,path] of roots.entries()) {
     await mkdir(path); execFileSync('git',['-C',path,'init','-b','branch-'+i]);
   }
+  const savedState = join(home, '.codex-global-state.json');
   // Old JSON deliberately disagrees: the current SQLite catalog must win.
-  await writeFile(join(home,'.codex-global-state.json'),JSON.stringify({'local-projects':{old:{name:'Outdated',rootPaths:[roots[0]]}}}));
+  const legacyState = JSON.stringify({'local-projects':{old:{name:'Outdated',rootPaths:[roots[0]]}}});
+  await writeFile(savedState, legacyState);
   db = new DatabaseSync(join(home,'state_42.sqlite'));
   db.exec('CREATE TABLE projects (id TEXT PRIMARY KEY, name TEXT, position INTEGER); CREATE TABLE project_roots (project_id TEXT, position INTEGER, path TEXT);');
   db.prepare('INSERT INTO projects VALUES (?,?,?)').run('fixture','Multi-repository project',0);
@@ -42,6 +45,29 @@ try {
   assert.equal((await launch({ repoPath: roots[0] }, { threadId: 'project-chat' })).branch, 'branch-0');
   assert.equal((await launch({}, { threadId: 'non-git-chat' })).needsCheckout, true);
   assert.equal((await launch({}, { threadId: 'unknown' })).needsCheckout, true);
+
+  const ordinaryFolder = join(roots[1], 'ordinary project');
+  const notes = join(ordinaryFolder, 'notes');
+  const worktreeSubdir = join(worktree, 'src');
+  await mkdir(notes, { recursive: true });
+  await mkdir(worktreeSubdir);
+  insertThread.run('ordinary-project-chat', ordinaryFolder, 'ordinary');
+  insertThread.run('ordinary-subdir-chat', notes, 'unmapped-sqlite-project');
+  insertThread.run('worktree-subdir-chat', worktreeSubdir, 'fixture');
+  await writeFile(savedState, JSON.stringify({
+    'local-projects': {
+      fixture: { id: 'fixture', name: 'Git project', rootPaths: roots },
+      ordinary: { id: 'ordinary', name: 'Ordinary folder', rootPaths: [ordinaryFolder] },
+    },
+    'project-order': ['fixture', 'ordinary'],
+  }));
+  assert.equal((await launch({}, { threadId: 'ordinary-project-chat' })).needsCheckout, true);
+  assert.equal((await launch({}, { threadId: 'ordinary-subdir-chat' })).needsCheckout, true);
+  assert.equal((await launch({}, { threadId: 'project-chat' })).branch, 'branch-1');
+  assert.equal((await launch({}, { threadId: 'worktree-subdir-chat' })).branch, 'topic');
+  assert.equal((await launch({ repoPath: ordinaryFolder }, { threadId: 'ordinary-project-chat' })).branch, 'branch-1');
+  await writeFile(savedState, legacyState);
+
   let catalog = await listProjects();
   assert.equal(catalog.discovery.source,'Codex local project database');
   assert.equal(catalog.projects.length,2);
@@ -58,6 +84,15 @@ try {
   assert.equal((await listProjects()).projects[0].label,'Outdated');
   await writeFile(join(home,'.codex-global-state.json'),JSON.stringify({'local-projects':{a:{name:'Legacy multi-root',rootPaths:roots}}}));
   assert.equal((await listProjects()).projects.length,2);
+  await writeFile(join(home,'.codex-global-state.json'),JSON.stringify({'local-projects':{
+    direct: { name:'Unborn checkout',rootPaths:[roots[0]] },
+    nested: { name:'Ordinary folder',rootPaths:[subdir] },
+    linked: { name:'Linked checkout',rootPaths:[worktree] },
+  }}));
+  const candidates = (await listProjects()).projects;
+  assert.equal(candidates.find(project => project.label === 'Unborn checkout').checkouts[0].branch, 'branch-0');
+  assert.deepEqual(candidates.find(project => project.label === 'Ordinary folder').checkouts, []);
+  assert(candidates.find(project => project.label === 'Linked checkout').checkouts.some(checkout => checkout.branch === 'topic'));
   await rm(join(home,'.codex-global-state.json'));
   assert((await readCodexProjects()).warning);
   assert((await handle('tools/call',{name:'source_control_panel'})).structuredContent.needsCheckout);
@@ -84,7 +119,12 @@ try {
   assert.equal((await rpc('tools/call',{name:'git_status',arguments:{repoPath:roots[1]}})).result.structuredContent.branch,'branch-1');
   console.log('PASS: live multi-root catalog, external rename/removal, authoritative empty database, legacy discovery, unavailable catalog, no implicit fallback, relocated portable MCP launch.');
 } finally {
-  db?.close(); child?.kill();
+  db?.close();
+  if (child?.pid && child.exitCode === null && child.signalCode === null) {
+    const exited = once(child, 'exit');
+    child.kill();
+    await exited;
+  }
   if (oldHome === undefined) delete process.env.CODEX_HOME; else process.env.CODEX_HOME=oldHome;
   await rm(root,{recursive:true,force:true});
 }
