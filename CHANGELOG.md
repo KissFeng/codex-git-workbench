@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.9.0
+
+- Add native Antigravity 2.0 UI plugin support (Sidecar + right auxiliary pane) with automatic workspace tracking, host theme isolation, and local preference persistence.
+- Add cross-platform auto-detecting installers (`install.sh`, `install.ps1`, and `scripts/install.mjs`) that detect local Codex and Antigravity environments and install the matching plugin(s).
+
 ## 0.8.2
 
 - Choose a checkout with the native folder picker on macOS and Windows, and open a working file or its containing folder from the file menu.

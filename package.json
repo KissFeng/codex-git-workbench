@@ -1,6 +1,6 @@
 {
   "name": "codex-git-workbench",
-  "version": "0.8.2",
+  "version": "0.9.0",
   "private": true,
   "description": "A local Git workbench for Codex desktop. Review diffs, stage changes, and manage commits, branches, and worktrees. · Codex 桌面端的本地 Git 工作台。查看差异、暂存更改，并管理提交、分支和工作树。",
   "license": "MIT",

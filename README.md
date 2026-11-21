@@ -36,10 +36,10 @@ Pass `--codex`, `--antigravity`, `--all`, or `--ref <tag>` to override auto-dete
 
 ### Manual install
 
-**Codex desktop** (from GitHub [v0.8.2](https://github.com/KissFeng/codex-git-workbench/releases/tag/v0.8.2)):
+**Codex desktop** (from GitHub [v0.9.0](https://github.com/KissFeng/codex-git-workbench/releases/tag/v0.9.0)):
 
 ```sh
-codex plugin marketplace add KissFeng/codex-git-workbench --ref v0.8.2
+codex plugin marketplace add KissFeng/codex-git-workbench --ref v0.9.0
 codex plugin add codex-git-workbench@kissfeng-git-tools
 ```
 

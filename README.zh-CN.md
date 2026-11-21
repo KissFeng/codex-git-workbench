@@ -36,10 +36,10 @@ irm https://raw.githubusercontent.com/KissFeng/codex-git-workbench/main/install.
 
 ### 手动安装
 
-**Codex 桌面端**（从 GitHub 安装 [v0.8.2](https://github.com/KissFeng/codex-git-workbench/releases/tag/v0.8.2)）：
+**Codex 桌面端**（从 GitHub 安装 [v0.9.0](https://github.com/KissFeng/codex-git-workbench/releases/tag/v0.9.0)）：
 
 ```sh
-codex plugin marketplace add KissFeng/codex-git-workbench --ref v0.8.2
+codex plugin marketplace add KissFeng/codex-git-workbench --ref v0.9.0
 codex plugin add codex-git-workbench@kissfeng-git-tools
 ```
 
