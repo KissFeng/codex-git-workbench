@@ -16,16 +16,16 @@ Codex 桌面端的本地 Git 工作台。查看差异、暂存更改，并管理
 
 需要支持本地 MCP Apps 的 Codex 桌面端、Git 2.35 或更高版本，以及 Node.js 24 或更高版本。请确保 `git` 和 `node` 在 PATH 中。插件无需安装 npm 依赖。
 
-从 GitHub 安装 [v0.8.1](https://github.com/KissFeng/codex-git-workbench/releases/tag/v0.8.1)。
+从 GitHub 安装 [v0.8.2](https://github.com/KissFeng/codex-git-workbench/releases/tag/v0.8.2)。
 
 ```sh
-codex plugin marketplace add KissFeng/codex-git-workbench --ref v0.8.1
+codex plugin marketplace add KissFeng/codex-git-workbench --ref v0.8.2
 codex plugin add codex-git-workbench@kissfeng-git-tools
 ```
 
 在面板选择器中打开 **Git Workbench**。如果当前 Codex 聊天关联了 Git 工作目录，工作台会自动选中对应的工作副本。也可以从仓库选择器查找已保存的项目和工作树，或打开其他工作副本。
 
-使用 v0.8.1 时，可以在仓库选择器中输入工作副本的绝对路径。原生文件夹选择器和菜单中的打开文件、打开所在文件夹功能已合入 `main`，尚未发布。该版本支持的功能见 [v0.8.1 README（英文）](https://github.com/KissFeng/codex-git-workbench/blob/v0.8.1/README.md)。
+在 macOS 和 Windows 上，可以用原生文件夹选择器打开工作副本，也可以通过文件菜单打开文件或其所在文件夹。仓库选择器也支持输入工作副本的绝对路径。
 
 ### 安装排障
 

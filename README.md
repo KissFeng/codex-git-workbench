@@ -16,16 +16,16 @@ Docs, translations, compatibility reports, and code PRs are welcome. Small fixes
 
 You'll need Codex desktop with local MCP Apps support, Git 2.35 or later, and Node.js 24 or later. Make sure `git` and `node` are on your PATH. The plugin has no npm dependencies.
 
-Install [v0.8.1](https://github.com/KissFeng/codex-git-workbench/releases/tag/v0.8.1) from GitHub.
+Install [v0.8.2](https://github.com/KissFeng/codex-git-workbench/releases/tag/v0.8.2) from GitHub.
 
 ```sh
-codex plugin marketplace add KissFeng/codex-git-workbench --ref v0.8.1
+codex plugin marketplace add KissFeng/codex-git-workbench --ref v0.8.2
 codex plugin add codex-git-workbench@kissfeng-git-tools
 ```
 
 Open **Git Workbench** from the panel picker. When Codex provides a chat with a Git working directory, the workbench selects that checkout. You can look up saved projects and worktrees or open another checkout from the repository picker.
 
-In v0.8.1, enter your checkout’s absolute path in the repository picker. The native folder picker and the menu actions to open a file or its containing folder are available on `main` and are pending release. See the [v0.8.1 README](https://github.com/KissFeng/codex-git-workbench/blob/v0.8.1/README.md) for the features in this release.
+On macOS and Windows, use the native folder picker to open a checkout and the file menu to open a file or its containing folder. You can also enter the checkout’s absolute path in the repository picker.
 
 ### Installation troubleshooting
 

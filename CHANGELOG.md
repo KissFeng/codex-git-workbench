@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.2
+
+- Choose a checkout with the native folder picker on macOS and Windows, and open a working file or its containing folder from the file menu.
+- Select the checkout associated with the active Codex chat and collapse the repository list after selection.
+- Resize panel sections independently and include symbolic remote refs in the commit graph filter.
+- Show the repository row’s sync button when the branch has incoming or outgoing commits.
+
 ## 0.8.1
 
 - Show the commit body and line counts in a selectable hover card with a copy action for the full hash.
