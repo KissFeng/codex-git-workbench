@@ -58,6 +58,15 @@ try {
   assert.equal((await listProjects()).projects[0].label,'Outdated');
   await writeFile(join(home,'.codex-global-state.json'),JSON.stringify({'local-projects':{a:{name:'Legacy multi-root',rootPaths:roots}}}));
   assert.equal((await listProjects()).projects.length,2);
+  await writeFile(join(home,'.codex-global-state.json'),JSON.stringify({'local-projects':{
+    direct: { name:'Unborn checkout',rootPaths:[roots[0]] },
+    nested: { name:'Ordinary folder',rootPaths:[subdir] },
+    linked: { name:'Linked checkout',rootPaths:[worktree] },
+  }}));
+  const candidates = (await listProjects()).projects;
+  assert.equal(candidates.find(project => project.label === 'Unborn checkout').checkouts[0].branch, 'branch-0');
+  assert.deepEqual(candidates.find(project => project.label === 'Ordinary folder').checkouts, []);
+  assert(candidates.find(project => project.label === 'Linked checkout').checkouts.some(checkout => checkout.branch === 'topic'));
   await rm(join(home,'.codex-global-state.json'));
   assert((await readCodexProjects()).warning);
   assert((await handle('tools/call',{name:'source_control_panel'})).structuredContent.needsCheckout);

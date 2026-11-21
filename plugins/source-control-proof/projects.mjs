@@ -1,5 +1,6 @@
+import { realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { basename } from 'node:path';
+import { basename, relative } from 'node:path';
 import { readCodexProjects } from './codex-projects.mjs';
 import { git } from './git-status.mjs';
 
@@ -10,8 +11,11 @@ export async function listProjects() {
     label: (project.name || basename(path)) + (project.roots.length > 1 ? ' · ' + basename(path) : ''),
   })));
   const projects = await Promise.all(roots.map(async project => {
+    const unavailable = { ...project, checkouts: [], unavailable: true };
     try {
       const path = (await git(project.path, 'rev-parse', '--show-toplevel')).trim();
+      // Git searches parent directories, but a saved folder must itself be a checkout.
+      if (relative(await realpath(path), await realpath(project.path))) return unavailable;
       const raw = await git(path, 'worktree', 'list', '--porcelain', '-z');
       const checkouts = [];
       let checkout;
@@ -24,7 +28,7 @@ export async function listProjects() {
       }
       return { ...project, path, checkouts: checkouts.filter(c => !c.prunable) };
     } catch {
-      return { ...project, checkouts: [], unavailable: true };
+      return unavailable;
     }
   }));
   return { projects, homeDirectory: homedir(), discovery: { source: catalog.source, warning: catalog.warning } };
