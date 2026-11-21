@@ -55,7 +55,7 @@ test('packaged panel has two single-line separators, a repository name and a fix
   assert.match(html, /\.sc-scm-divider::after\s*\{[^}]*height:\s*1px/);
   assert.match(html, /id="current-project"[^>]*hidden/);
   const footer = html.match(/<footer[^>]*>([\s\S]*?)<\/footer>/)[1];
-  assert.match(footer.trim(), /^<a[^>]*href="https:\/\/github\.com\/KissFeng\/codex-git-workbench"[^>]*>Thanks for your support! Give us a star ⭐<\/a>$/);
+  assert.match(footer.trim(), /^<a[^>]*href="https:\/\/github\.com\/KissFeng\/git-workbench"[^>]*>Thanks for your support! Give us a star ⭐<\/a>$/);
   assert.equal(shellMessages['Thanks for your support! Give us a star ⭐'], '感谢支持，欢迎点个star⭐');
   assert.match(html, /class="sc-footer"/);
   assert.match(html, /\.sc-footer a\s*\{[^}]*white-space:\s*nowrap/);

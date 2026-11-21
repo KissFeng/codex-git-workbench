@@ -8,7 +8,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$Repo = "KissFeng/codex-git-workbench"
+$Repo = "KissFeng/git-workbench"
 $Marketplace = "kissfeng-git-tools"
 $Plugin = "codex-git-workbench@$Marketplace"
 

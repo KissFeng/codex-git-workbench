@@ -200,5 +200,15 @@ test('auto-detect installer resolves targets, dry-runs cleanly, and install.sh h
 
   const shCheck = spawnSync('sh', ['-n', join(process.cwd(), 'install.sh')], { encoding: 'utf8' });
   assert.equal(shCheck.status, 0, shCheck.stderr);
+
+  const flags = ['--all', '--ref', 'v0.9.0', '--dry-run'];
+  const shInstall = spawnSync('sh', ['install.sh', ...flags], { encoding: 'utf8' });
+  const nodeInstall = spawnSync(process.execPath, ['scripts/install.mjs', ...flags], { encoding: 'utf8' });
+  for (const install of [shInstall, nodeInstall]) {
+    assert.equal(install.status, 0, install.stderr);
+    assert.match(install.stdout, /codex plugin marketplace add KissFeng\/git-workbench --ref v0\.9\.0/);
+    assert.match(install.stdout, /codex plugin add codex-git-workbench@kissfeng-git-tools/);
+  }
+  assert.match(shInstall.stdout, /https:\/\/github\.com\/KissFeng\/git-workbench\/archive\/v0\.9\.0\.tar\.gz/);
 });
 

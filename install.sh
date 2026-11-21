@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-REPO="KissFeng/codex-git-workbench"
+REPO="KissFeng/git-workbench"
 MARKETPLACE="kissfeng-git-tools"
 PLUGIN="codex-git-workbench@${MARKETPLACE}"
 REF="main"

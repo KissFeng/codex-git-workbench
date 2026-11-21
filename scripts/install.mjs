@@ -11,7 +11,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, '..');
 const MARKETPLACE_ID = 'kissfeng-git-tools';
 const CODEX_PLUGIN_ID = `codex-git-workbench@${MARKETPLACE_ID}`;
-const CODEX_REPO = 'KissFeng/codex-git-workbench';
+const CODEX_REPO = 'KissFeng/git-workbench';
 
 export function hasCommand(command, exec = execFileSync) {
   try {

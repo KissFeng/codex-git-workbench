@@ -4,7 +4,7 @@
 
 A local Git workbench for Codex desktop and Antigravity 2.0. Review diffs, stage changes, and manage commits, branches, and worktrees.
 
-[Quick start](#quick-start) · [Features](#features) · [Changelog](CHANGELOG.md) · [Report an issue](https://github.com/KissFeng/codex-git-workbench/issues) · [Contribute](CONTRIBUTING.md)
+[Quick start](#quick-start) · [Features](#features) · [Changelog](CHANGELOG.md) · [Report an issue](https://github.com/KissFeng/git-workbench/issues) · [Contribute](CONTRIBUTING.md)
 
 Docs, translations, compatibility reports, and code PRs are welcome. Small fixes can go straight to a PR. For larger changes, open an issue so we can agree on the scope first.
 
@@ -23,23 +23,23 @@ Run one command to automatically detect your local Codex / Antigravity installat
 **macOS / Linux:**
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/KissFeng/codex-git-workbench/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/KissFeng/git-workbench/main/install.sh | sh
 ```
 
 **Windows (PowerShell):**
 
 ```powershell
-irm https://raw.githubusercontent.com/KissFeng/codex-git-workbench/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/KissFeng/git-workbench/main/install.ps1 | iex
 ```
 
 Pass `--codex`, `--antigravity`, `--all`, or `--ref <tag>` to override auto-detection (for example `curl -fsSL .../install.sh | sh -s -- --antigravity`).
 
 ### Manual install
 
-**Codex desktop** (from GitHub [v0.9.0](https://github.com/KissFeng/codex-git-workbench/releases/tag/v0.9.0)):
+**Codex desktop** (from GitHub [v0.9.0](https://github.com/KissFeng/git-workbench/releases/tag/v0.9.0)):
 
 ```sh
-codex plugin marketplace add KissFeng/codex-git-workbench --ref v0.9.0
+codex plugin marketplace add KissFeng/git-workbench --ref v0.9.0
 codex plugin add codex-git-workbench@kissfeng-git-tools
 ```
 
@@ -62,7 +62,7 @@ On macOS and Windows, use the native folder picker to open a checkout and the fi
 - **Codex cannot find Node.js or Git.** Run `node --version` and `git --version`. If either command is missing or the plugin still fails to start, make sure the folder containing the executable is on the PATH available to the desktop app, then reopen Codex.
 - **The old version still appears.** The install command pins a Git tag. To switch versions, use the desired tag in the marketplace command and run the plugin install command again. If Codex reports that the marketplace is already configured, run `codex plugin marketplace remove kissfeng-git-tools` first. Fully quit and reopen Codex after installing.
 
-The desktop development environment is macOS. CI runs Node.js and Git tests on macOS and Linux. [Desktop compatibility reports](https://github.com/KissFeng/codex-git-workbench/issues) for Windows and Linux are welcome. Include your OS, Codex version, plugin tag, and steps to reproduce.
+The desktop development environment is macOS. CI runs Node.js and Git tests on macOS and Linux. [Desktop compatibility reports](https://github.com/KissFeng/git-workbench/issues) for Windows and Linux are welcome. Include your OS, Codex or Antigravity version, plugin tag, and steps to reproduce.
 
 ## Features
 

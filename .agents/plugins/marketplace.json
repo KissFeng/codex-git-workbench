@@ -1,7 +1,7 @@
 {
   "name": "kissfeng-git-tools",
   "interface": {
-    "displayName": "Git Workbench for Codex"
+    "displayName": "Git Workbench"
   },
   "plugins": [
     {
