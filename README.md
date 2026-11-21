@@ -25,6 +25,8 @@ codex plugin add codex-git-workbench@kissfeng-git-tools
 
 Open **Git Workbench** from the panel picker. When Codex provides a chat with a Git working directory, the workbench selects that checkout. You can look up saved projects and worktrees or open another checkout from the repository picker.
 
+In v0.8.1, enter your checkout’s absolute path in the repository picker. The native folder picker and the menu actions to open a file or its containing folder are available on `main` and are pending release. See the [v0.8.1 README](https://github.com/KissFeng/codex-git-workbench/blob/v0.8.1/README.md) for the features in this release.
+
 ### Installation troubleshooting
 
 - **Git Workbench is missing.** Run `codex plugin list --marketplace kissfeng-git-tools` to check that the plugin is installed, then fully quit and reopen Codex. Use a Codex desktop version with local MCP Apps support.
