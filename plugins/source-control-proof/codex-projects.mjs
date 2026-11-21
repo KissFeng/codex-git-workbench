@@ -36,18 +36,22 @@ function validRoots(roots) {
   return [...new Set(roots.filter(root => typeof root === 'string' && isAbsolute(root)))];
 }
 
+function savedProjects(state) {
+  const saved = state?.['local-projects'];
+  if (!saved || typeof saved !== 'object' || Array.isArray(saved)) return null;
+  const order = Array.isArray(state['project-order']) ? state['project-order'] : [];
+  return Object.values(saved).filter(project => Array.isArray(project?.rootPaths)).map(project => ({
+    id: project.id, name: project.name, roots: validRoots(project.rootPaths),
+  })).sort((a, b) => {
+    const rank = id => order.includes(id) ? order.indexOf(id) : order.length;
+    return rank(a.id) - rank(b.id);
+  });
+}
+
 function legacyProjects(state) {
-  const saved = state['local-projects'];
-  if (saved && typeof saved === 'object' && !Array.isArray(saved)) {
-    const order = Array.isArray(state['project-order']) ? state['project-order'] : [];
-    return Object.values(saved).filter(project => Array.isArray(project?.rootPaths)).map(project => ({
-      id: project.id, name: project.name, roots: validRoots(project.rootPaths),
-    })).sort((a, b) => {
-      const rank = id => order.includes(id) ? order.indexOf(id) : order.length;
-      return rank(a.id) - rank(b.id);
-    });
-  }
-  const roots = state['electron-saved-workspace-roots'];
+  const projects = savedProjects(state);
+  if (projects) return projects;
+  const roots = state?.['electron-saved-workspace-roots'];
   if (!Array.isArray(roots)) throw new Error('Codex project catalog format is not recognized.');
   return validRoots(roots).map(root => ({ name: basename(root), roots: [root] }));
 }
@@ -55,6 +59,12 @@ function legacyProjects(state) {
 export async function readCodexProjects() {
   const directory = codexHome();
   try {
+    const state = await readFile(join(directory, '.codex-global-state.json'), 'utf8').then(JSON.parse).catch(() => null);
+    // Desktop's ordered list can include projects that have no row in the SQLite catalog.
+    if (Array.isArray(state?.['project-order'])) {
+      const projects = savedProjects(state);
+      if (projects) return { projects, source: 'Codex saved workspace state' };
+    }
     const databases = await stateDatabases(directory);
     if (databases.length) {
       const { DatabaseSync } = await import('node:sqlite');
@@ -74,7 +84,6 @@ export async function readCodexProjects() {
         } finally { db.close(); }
       }
     }
-    const state = JSON.parse(await readFile(join(directory, '.codex-global-state.json'), 'utf8'));
     return { projects: legacyProjects(state), source: 'Codex saved workspace state' };
   } catch {
     return { projects: [], source: null,
