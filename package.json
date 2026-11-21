@@ -10,6 +10,7 @@
   },
   "scripts": {
     "test": "node --test --test-timeout=15000 tests/*.test.mjs",
+    "install:auto": "node scripts/install.mjs",
     "build:antigravity": "node scripts/install-antigravity.mjs --out dist/antigravity-git-workbench",
     "install:antigravity": "node scripts/install-antigravity.mjs --install"
   }

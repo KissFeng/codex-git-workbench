@@ -1,8 +1,8 @@
-# Git Workbench for Codex
+# Git Workbench for Codex & Antigravity
 
 **English** · [简体中文](README.zh-CN.md)
 
-A local Git workbench for Codex desktop. Review diffs, stage changes, and manage commits, branches, and worktrees.
+A local Git workbench for Codex desktop and Antigravity 2.0. Review diffs, stage changes, and manage commits, branches, and worktrees.
 
 [Quick start](#quick-start) · [Features](#features) · [Changelog](CHANGELOG.md) · [Report an issue](https://github.com/KissFeng/codex-git-workbench/issues) · [Contribute](CONTRIBUTING.md)
 
@@ -14,16 +14,45 @@ Docs, translations, compatibility reports, and code PRs are welcome. Small fixes
 
 ## Quick start
 
-You'll need Codex desktop with local MCP Apps support, Git 2.35 or later, and Node.js 24 or later. Make sure `git` and `node` are on your PATH. The plugin has no npm dependencies.
+You'll need **Codex desktop** (with local MCP Apps support) or **Antigravity 2.0**, Git 2.35 or later, and Node.js 22+ (Node.js 24+ recommended). Make sure `git` and `node` are on your PATH. The plugin has no npm dependencies.
 
-Install [v0.8.1](https://github.com/KissFeng/codex-git-workbench/releases/tag/v0.8.1) from GitHub.
+### Auto-detect install (Codex & Antigravity)
+
+Run one command to automatically detect your local Codex / Antigravity installation and install the matching plugin(s):
+
+**macOS / Linux:**
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/KissFeng/codex-git-workbench/main/install.sh | sh
+```
+
+**Windows (PowerShell):**
+
+```powershell
+irm https://raw.githubusercontent.com/KissFeng/codex-git-workbench/main/install.ps1 | iex
+```
+
+Pass `--codex`, `--antigravity`, `--all`, or `--ref <tag>` to override auto-detection (for example `curl -fsSL .../install.sh | sh -s -- --antigravity`).
+
+### Manual install
+
+**Codex desktop** (from GitHub [v0.8.1](https://github.com/KissFeng/codex-git-workbench/releases/tag/v0.8.1)):
 
 ```sh
 codex plugin marketplace add KissFeng/codex-git-workbench --ref v0.8.1
 codex plugin add codex-git-workbench@kissfeng-git-tools
 ```
 
-Open **Git Workbench** from the panel picker. When Codex provides a chat with a Git working directory, the workbench selects that checkout. You can look up saved projects and worktrees or open another checkout from the repository picker.
+**Antigravity 2.0** (from a local clone):
+
+```sh
+npm run install:antigravity
+```
+
+- In **Codex**, open **Git Workbench** from the panel picker. When Codex provides a chat with a Git working directory, the workbench selects that checkout.
+- In **Antigravity 2.0**, open **Git Workbench** from the right auxiliary pane (manage it in **Customizations → antigravity-git-workbench**). The workbench automatically tracks the active conversation's workspace and follows the host light/dark theme.
+
+You can look up saved projects and worktrees or open another checkout from the repository picker.
 
 In v0.8.1, enter your checkout’s absolute path in the repository picker. The native folder picker and the menu actions to open a file or its containing folder are available on `main` and are pending release. See the [v0.8.1 README](https://github.com/KissFeng/codex-git-workbench/blob/v0.8.1/README.md) for the features in this release.
 

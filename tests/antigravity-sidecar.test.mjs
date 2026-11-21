@@ -13,6 +13,7 @@ import {
   writePreferences,
 } from '../plugins/antigravity-git-workbench/sidecars/git_workbench/main.mjs';
 import { buildAntigravityPlugin } from '../scripts/install-antigravity.mjs';
+import { detectTargets, parseInstallArgs, resolveInstallPlan, runInstall } from '../scripts/install.mjs';
 
 function initGitRepo(dir, branch = 'main') {
   execFileSync('git', ['-C', dir, 'init', '-b', branch]);
@@ -175,3 +176,29 @@ test('buildAntigravityPlugin produces a self-contained plugin bundle', async t =
   assert.match(html, /<script src="\/preload\.js"><\/script>/);
   assert.match(html, /id="commit-form"/);
 });
+
+test('auto-detect installer resolves targets, dry-runs cleanly, and install.sh has valid POSIX syntax', async () => {
+  const detectedBoth = detectTargets({
+    home: '/fake/home',
+    env: {},
+    exists: p => p === '/fake/home/.gemini/antigravity',
+    checkCommand: cmd => cmd === 'codex',
+  });
+  assert.deepEqual(detectedBoth, { codex: true, codexCli: true, antigravity: true });
+
+  assert.deepEqual(resolveInstallPlan(parseInstallArgs([]), detectedBoth), { codex: true, antigravity: true });
+  assert.deepEqual(resolveInstallPlan(parseInstallArgs(['--antigravity']), detectedBoth), { codex: false, antigravity: true });
+  assert.deepEqual(resolveInstallPlan(parseInstallArgs(['--codex', '--ref=v0.9.0']), detectedBoth), { codex: true, antigravity: false });
+
+  const dryResult = await runInstall(['--dry-run'], {
+    home: '/fake/home',
+    env: {},
+    exists: p => p === '/fake/home/.gemini/antigravity',
+    checkCommand: () => false,
+  });
+  assert.deepEqual(dryResult.installed, ['antigravity']);
+
+  const shCheck = spawnSync('sh', ['-n', join(process.cwd(), 'install.sh')], { encoding: 'utf8' });
+  assert.equal(shCheck.status, 0, shCheck.stderr);
+});
+
