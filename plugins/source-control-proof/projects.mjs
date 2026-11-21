@@ -1,8 +1,30 @@
 import { realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { basename, relative } from 'node:path';
+import { basename, isAbsolute, relative, sep } from 'node:path';
 import { readCodexProjects } from './codex-projects.mjs';
-import { git } from './git-status.mjs';
+import { checkoutRoot, git } from './git-status.mjs';
+
+function relativePathWithin(directory, path) {
+  const offset = relative(directory, path);
+  return offset === '..' || offset.startsWith('..' + sep) || isAbsolute(offset) ? null : offset;
+}
+
+export async function checkoutForThread({ cwd, projectId }) {
+  const checkout = await checkoutRoot(cwd);
+  const [checkoutDirectory, chatDirectory] = await Promise.all([realpath(checkout), realpath(cwd)]);
+  if (relative(checkoutDirectory, chatDirectory) === '') return checkout;
+
+  const { projects } = await readCodexProjects();
+  const project = projectId ? projects.find(candidate => candidate.id === projectId) : undefined;
+  const roots = project?.roots ?? projects.flatMap(candidate => candidate.roots);
+  for (const root of roots) {
+    const projectDirectory = await realpath(root).catch(() => null);
+    // A saved project folder between the checkout and the chat is its own boundary.
+    if (projectDirectory && relativePathWithin(checkoutDirectory, projectDirectory) &&
+        relativePathWithin(projectDirectory, chatDirectory) !== null) return null;
+  }
+  return checkout;
+}
 
 export async function listProjects() {
   const catalog = await readCodexProjects();

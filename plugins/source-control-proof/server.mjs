@@ -3,7 +3,7 @@ import { createInterface } from 'node:readline';
 import { readFile } from 'node:fs/promises';
 import { getStatus } from './git-status.mjs';
 import { getFile } from './git-file.mjs';
-import { listProjects } from './projects.mjs';
+import { checkoutForThread, listProjects } from './projects.mjs';
 import { readCodexThread } from './codex-projects.mjs';
 import { updateStaging } from './git-staging.mjs';
 import { fileURLToPath } from 'node:url';
@@ -77,8 +77,11 @@ export async function handle(method, params = {}) {
         const thread = await readCodexThread(params._meta?.threadId ?? params._meta?.thread_id);
         if (thread) {
           try {
-            const status = await getStatus(thread.cwd);
-            return { content: [], structuredContent: { ...status, contextSource: 'Codex chat', projectId: thread.projectId } };
+            const checkout = await checkoutForThread(thread);
+            if (checkout) {
+              const status = await getStatus(checkout);
+              return { content: [], structuredContent: { ...status, contextSource: 'Codex chat', projectId: thread.projectId } };
+            }
           } catch (error) {
             if (!error.message.startsWith('No Git checkout at ')) throw error;
           }
